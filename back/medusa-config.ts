@@ -1,5 +1,6 @@
 import { loadEnv, defineConfig } from "@medusajs/framework/utils"
 import { User } from "./src/modules/user/user.entity"
+import Tenant from "./src/modules/tenant/tenant-model"
 
 loadEnv(process.env.NODE_ENV || "development", process.cwd())
 
@@ -13,7 +14,7 @@ const connectionString = `postgres://${dbUser}:${dbPass}@${dbHost}:${dbPort}/${m
 export default defineConfig({
   projectConfig: {
     databaseUrl: connectionString,
-    databaseEntities: [User],
+    databaseEntities: [User, Tenant],
     http: {
       storeCors: process.env.STORE_CORS || "",
       adminCors: process.env.ADMIN_CORS || "",
