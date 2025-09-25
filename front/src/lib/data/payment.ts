@@ -1,10 +1,11 @@
 "use server"
 
-import { sdk } from "@lib/config"
+import { getMedusaSdk } from "@lib/config"
 import { getAuthHeaders, getCacheOptions } from "./cookies"
 import { HttpTypes } from "@medusajs/types"
 
 export const listCartPaymentMethods = async (regionId: string) => {
+  const { sdk } = await getMedusaSdk()
   const headers = {
     ...(await getAuthHeaders()),
   }

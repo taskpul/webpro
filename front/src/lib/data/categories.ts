@@ -1,8 +1,9 @@
-import { sdk } from "@lib/config"
+import { getMedusaSdk } from "@lib/config"
 import { HttpTypes } from "@medusajs/types"
 import { getCacheOptions } from "./cookies"
 
 export const listCategories = async (query?: Record<string, any>) => {
+  const { sdk } = await getMedusaSdk()
   const next = {
     ...(await getCacheOptions("categories")),
   }
@@ -27,6 +28,7 @@ export const listCategories = async (query?: Record<string, any>) => {
 }
 
 export const getCategoryByHandle = async (categoryHandle: string[]) => {
+  const { sdk } = await getMedusaSdk()
   const handle = `${categoryHandle.join("/")}`
 
   const next = {

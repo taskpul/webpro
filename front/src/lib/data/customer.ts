@@ -1,6 +1,6 @@
 "use server"
 
-import { sdk } from "@lib/config"
+import { getMedusaSdk } from "@lib/config"
 import medusaError from "@lib/util/medusa-error"
 import { HttpTypes } from "@medusajs/types"
 import { revalidateTag } from "next/cache"
@@ -20,6 +20,8 @@ export const retrieveCustomer =
     const authHeaders = await getAuthHeaders()
 
     if (!authHeaders) return null
+
+    const { sdk } = await getMedusaSdk()
 
     const headers = {
       ...authHeaders,
@@ -44,6 +46,7 @@ export const retrieveCustomer =
   }
 
 export const updateCustomer = async (body: HttpTypes.StoreUpdateCustomer) => {
+  const { sdk } = await getMedusaSdk()
   const headers = {
     ...(await getAuthHeaders()),
   }
@@ -60,6 +63,7 @@ export const updateCustomer = async (body: HttpTypes.StoreUpdateCustomer) => {
 }
 
 export async function signup(_currentState: unknown, formData: FormData) {
+  const { sdk } = await getMedusaSdk()
   const password = formData.get("password") as string
   const customerForm = {
     email: formData.get("email") as string,
@@ -105,6 +109,7 @@ export async function signup(_currentState: unknown, formData: FormData) {
 }
 
 export async function login(_currentState: unknown, formData: FormData) {
+  const { sdk } = await getMedusaSdk()
   const email = formData.get("email") as string
   const password = formData.get("password") as string
 
@@ -128,6 +133,7 @@ export async function login(_currentState: unknown, formData: FormData) {
 }
 
 export async function signout(countryCode: string) {
+  const { sdk } = await getMedusaSdk()
   await sdk.auth.logout()
 
   await removeAuthToken()
@@ -144,6 +150,7 @@ export async function signout(countryCode: string) {
 }
 
 export async function transferCart() {
+  const { sdk } = await getMedusaSdk()
   const cartId = await getCartId()
 
   if (!cartId) {
@@ -162,6 +169,7 @@ export const addCustomerAddress = async (
   currentState: Record<string, unknown>,
   formData: FormData
 ): Promise<any> => {
+  const { sdk } = await getMedusaSdk()
   const isDefaultBilling = (currentState.isDefaultBilling as boolean) || false
   const isDefaultShipping = (currentState.isDefaultShipping as boolean) || false
 
@@ -199,6 +207,7 @@ export const addCustomerAddress = async (
 export const deleteCustomerAddress = async (
   addressId: string
 ): Promise<void> => {
+  const { sdk } = await getMedusaSdk()
   const headers = {
     ...(await getAuthHeaders()),
   }
@@ -219,6 +228,7 @@ export const updateCustomerAddress = async (
   currentState: Record<string, unknown>,
   formData: FormData
 ): Promise<any> => {
+  const { sdk } = await getMedusaSdk()
   const addressId =
     (currentState.addressId as string) || (formData.get("addressId") as string)
 
