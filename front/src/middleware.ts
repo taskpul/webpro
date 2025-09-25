@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
-import { getRegionMap } from "./lib/regions" // assume your helper is there
+
+import { getCountryCode, getRegionMap } from "@lib/regions"
 
 export async function middleware(request: NextRequest) {
   const path = request.nextUrl.pathname
@@ -9,48 +10,49 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next()
   }
 
-  let redirectUrl = request.nextUrl.href
-  let response = NextResponse.redirect(redirectUrl, 307)
-
-  let cacheIdCookie = request.cookies.get("_medusa_cache_id")
-  let cacheId = cacheIdCookie?.value || crypto.randomUUID()
-
-  const regionMap = await getRegionMap(cacheId)
-  const countryCode = regionMap && (await getCountryCode(request, regionMap))
-
-  const urlHasCountryCode =
-    countryCode && request.nextUrl.pathname.split("/")[1].includes(countryCode)
-
-  if (urlHasCountryCode && cacheIdCookie) {
+  if (path.includes(".")) {
     return NextResponse.next()
   }
 
-  if (urlHasCountryCode && !cacheIdCookie) {
+  const cacheIdCookie = request.cookies.get("_medusa_cache_id")
+  const cacheId = cacheIdCookie?.value ?? crypto.randomUUID()
+
+  const regionMap = await getRegionMap(cacheId)
+
+  if (!regionMap || regionMap.size === 0) {
+    return NextResponse.next()
+  }
+
+  const countryCode = await getCountryCode(request, regionMap)
+
+  if (!countryCode) {
+    return NextResponse.next()
+  }
+
+  const pathSegments = request.nextUrl.pathname.split("/").filter(Boolean)
+  const currentCountry = pathSegments.at(0)?.toLowerCase()
+  const hasCountrySegment =
+    currentCountry !== undefined && regionMap.has(currentCountry)
+  const matchesCountryCode = currentCountry === countryCode
+
+  if (hasCountrySegment && matchesCountryCode) {
+    if (cacheIdCookie) {
+      return NextResponse.next()
+    }
+
+    const response = NextResponse.redirect(request.nextUrl.href, 307)
     response.cookies.set("_medusa_cache_id", cacheId, {
       maxAge: 60 * 60 * 24,
     })
+
     return response
   }
 
-  if (request.nextUrl.pathname.includes(".")) {
-    return NextResponse.next()
-  }
+  const redirectPath = request.nextUrl.pathname === "/" ? "" : request.nextUrl.pathname
+  const queryString = request.nextUrl.search ?? ""
+  const redirectUrl = `${request.nextUrl.origin}/${countryCode}${redirectPath}${queryString}`
 
-  const redirectPath =
-    request.nextUrl.pathname === "/" ? "" : request.nextUrl.pathname
-  const queryString = request.nextUrl.search ? request.nextUrl.search : ""
-
-  if (!urlHasCountryCode && countryCode) {
-    redirectUrl = `${request.nextUrl.origin}/${countryCode}${redirectPath}${queryString}`
-    response = NextResponse.redirect(`${redirectUrl}`, 307)
-  } else if (!urlHasCountryCode && !countryCode) {
-    return new NextResponse(
-      "No valid regions configured. Please set up regions with countries in your Medusa Admin.",
-      { status: 500 }
-    )
-  }
-
-  return response
+  return NextResponse.redirect(redirectUrl, 307)
 }
 
 export const config = {
