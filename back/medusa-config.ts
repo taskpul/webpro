@@ -1,3 +1,4 @@
+import "reflect-metadata"
 import { loadEnv, defineConfig } from "@medusajs/framework/utils"
 import { User } from "./src/modules/user/user.entity"
 import Tenant from "./src/modules/tenant/tenant-model"

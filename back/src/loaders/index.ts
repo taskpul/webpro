@@ -1,3 +1,4 @@
+import "reflect-metadata"
 import { tenantMiddleware } from "./tenant-loader"
 
 export default async ({ app }) => {
