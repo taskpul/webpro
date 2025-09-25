@@ -1,44 +1,81 @@
+import type { Application, Request, Response } from "express"
 import { Router } from "express"
-import { TenantService } from "../../services/tenant-service"
-import { DataSource } from "typeorm"
-import { Tenant } from "../../modules/tenant/tenant-model"
-import { requireSuperAdmin } from "../../middleware/super-admin-middleware"
+import { MedusaError } from "medusa-core-utils"
+import type { TenantService } from "../../modules/tenant/tenant-service"
+import { superAdminMiddleware } from "../../middleware/super-admin-middleware"
+import {
+  resolveTenantDeleteInput,
+  validateTenantCreatePayload,
+} from "./utils/tenant-validation"
 
-export default (app) => {
+type ScopedRequest = Request & {
+  scope: { resolve: <T = unknown>(registration: string) => T }
+}
+
+const handleServiceError = (error: unknown, res: Response) => {
+  if (error instanceof MedusaError) {
+    return res.status(error.type === MedusaError.Types.NOT_FOUND ? 404 : 400).json({
+      type: error.type,
+      message: error.message,
+    })
+  }
+
+  return res.status(500).json({
+    type: "unknown_error",
+    message: (error as Error)?.message ?? "Unexpected error",
+  })
+}
+
+export default (app: Application) => {
   const router = Router()
   app.use("/tenants", router)
 
-  const mainDataSource = new DataSource({
-    type: "postgres",
-    host: process.env.DB_HOST,
-    port: parseInt(process.env.DB_PORT || "5432"),
-    username: process.env.DB_USER,
-    password: process.env.DB_PASS,
-    database: process.env.MAIN_DB,
-    entities: [Tenant],
+  router.use(superAdminMiddleware)
+
+  router.get("/", async (req: ScopedRequest, res) => {
+    try {
+      const tenantService = req.scope.resolve<TenantService>("tenantService")
+      const tenants = await tenantService.list()
+      return res.json({ tenants })
+    } catch (error) {
+      return handleServiceError(error, res)
+    }
   })
 
-  let tenantService: TenantService
+  router.post("/", async (req: ScopedRequest, res) => {
+    const validation = validateTenantCreatePayload(req.body)
 
-  mainDataSource.initialize().then(() => {
-    tenantService = new TenantService(mainDataSource)
+    if (!validation.data) {
+      return res.status(400).json({
+        message: "Validation failed",
+        errors: validation.errors,
+      })
+    }
+
+    try {
+      const tenantService = req.scope.resolve<TenantService>("tenantService")
+      const tenant = await tenantService.create(validation.data)
+      return res.status(201).json({ tenant })
+    } catch (error) {
+      return handleServiceError(error, res)
+    }
   })
 
-  // ✅ Protect with requireSuperAdmin
-  router.post("/", requireSuperAdmin, async (req, res) => {
-    const { name } = req.body
-    const result = await tenantService.createTenant(name)
-    res.json(result)
-  })
+  router.delete("/:identifier", async (req: ScopedRequest, res) => {
+    let deleteInput
 
-  router.delete("/:name", requireSuperAdmin, async (req, res) => {
-    const result = await tenantService.deleteTenant(req.params.name)
-    res.json(result)
-  })
+    try {
+      deleteInput = resolveTenantDeleteInput(req.params.identifier)
+    } catch (error) {
+      return handleServiceError(error, res)
+    }
 
-  // List tenants (can be public or protected, your choice)
-  router.get("/", requireSuperAdmin, async (req, res) => {
-    const tenants = await tenantService.listTenants()
-    res.json(tenants)
+    try {
+      const tenantService = req.scope.resolve<TenantService>("tenantService")
+      const deleted = await tenantService.delete(deleteInput)
+      return res.json({ deleted })
+    } catch (error) {
+      return handleServiceError(error, res)
+    }
   })
 }
