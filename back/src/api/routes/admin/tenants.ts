@@ -1,6 +1,7 @@
 import type { Request } from "express"
 import { Router } from "express"
 import { MedusaError } from "medusa-core-utils"
+import { TENANT_SERVICE } from "../../../modules/tenant"
 import type { TenantService } from "../../../modules/tenant/tenant-service"
 import { superAdminMiddleware } from "../../../middleware/super-admin-middleware"
 import {
@@ -19,7 +20,8 @@ export default (router: Router) => {
   route.use(superAdminMiddleware)
 
   route.get("/", async (req: ScopedRequest, res) => {
-    const tenantService = req.scope.resolve<TenantService>("tenantService")
+    const tenantService =
+      req.scope.resolve<TenantService>(TENANT_SERVICE)
     const tenants = await tenantService.list()
     return res.json({ tenants })
   })
@@ -35,7 +37,8 @@ export default (router: Router) => {
     }
 
     try {
-      const tenantService = req.scope.resolve<TenantService>("tenantService")
+      const tenantService =
+        req.scope.resolve<TenantService>(TENANT_SERVICE)
       const tenant = await tenantService.create(validation.data)
       return res.status(201).json({ tenant })
     } catch (error) {
@@ -47,7 +50,8 @@ export default (router: Router) => {
   route.delete("/:identifier", async (req: ScopedRequest, res) => {
     try {
       const deleteInput = resolveTenantDeleteInput(req.params.identifier)
-      const tenantService = req.scope.resolve<TenantService>("tenantService")
+      const tenantService =
+        req.scope.resolve<TenantService>(TENANT_SERVICE)
       const deleted = await tenantService.delete(deleteInput)
       return res.json({ deleted })
     } catch (error) {
