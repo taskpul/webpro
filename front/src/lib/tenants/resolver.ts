@@ -1,6 +1,3 @@
-import { promises as fs } from "node:fs"
-import path from "node:path"
-
 export interface TenantStorefrontSettings {
   medusaUrl: string
   publishableKey?: string | null
@@ -31,9 +28,7 @@ export interface TenantContext {
 }
 
 const tenantCache = new Map<string, TenantConfig>()
-
-const getTenantDirectory = () =>
-  process.env.TENANT_CONFIG_DIR ?? path.join(process.cwd(), "config", "tenants")
+let cachedEnvSignature: string | null = null
 
 const normalizeHost = (host?: string | null): string | null => {
   if (!host) {
@@ -89,38 +84,39 @@ const isNetworkAdminPath = (pathname?: string | null) => {
   return networkAdminPaths().has(normalized)
 }
 
-const loadTenantConfigs = async (): Promise<void> => {
-  const directory = getTenantDirectory()
+const ensureTenantCache = () => {
+  const serialized = process.env.TENANT_CONFIGS ?? ""
 
-  const files = await fs.readdir(directory).catch((error) => {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-      return []
-    }
+  if (serialized === cachedEnvSignature && tenantCache.size > 0) {
+    return
+  }
 
-    throw error
-  })
+  cachedEnvSignature = serialized
+  tenantCache.clear()
 
-  await Promise.all(
-    files
-      .filter((file) => file.endsWith(".json"))
-      .map(async (file) => {
-        const absolute = path.join(directory, file)
-        const data = await fs.readFile(absolute, "utf-8")
-        const parsed = JSON.parse(data) as TenantConfig
+  if (!serialized) {
+    return
+  }
 
-        tenantCache.set(normalizeHost(parsed.hostname) ?? parsed.tenant, parsed)
-      })
-  )
-}
+  try {
+    const configs = JSON.parse(serialized) as TenantConfig[]
 
-const ensureTenantCache = async () => {
-  if (tenantCache.size === 0) {
-    await loadTenantConfigs()
+    configs.forEach((config) => {
+      const normalizedHostname = normalizeHost(config.hostname)
+
+      if (normalizedHostname) {
+        tenantCache.set(normalizedHostname, config)
+      }
+
+      tenantCache.set(config.tenant, config)
+    })
+  } catch {
+    cachedEnvSignature = null
   }
 }
 
 const findTenantByHost = async (host: string): Promise<TenantConfig | null> => {
-  await ensureTenantCache()
+  ensureTenantCache()
 
   const direct = tenantCache.get(host)
 
@@ -128,7 +124,9 @@ const findTenantByHost = async (host: string): Promise<TenantConfig | null> => {
     return direct
   }
 
-  for (const config of tenantCache.values()) {
+  const configs = Array.from(tenantCache.values())
+
+  for (const config of configs) {
     const normalizedHostname = normalizeHost(config.hostname)
     const normalizedRootDomain = normalizeHost(config.rootDomain)
 
@@ -149,9 +147,11 @@ const findTenantByHost = async (host: string): Promise<TenantConfig | null> => {
 }
 
 const resolvePrimaryDomain = async (host: string): Promise<TenantConfig | null> => {
-  await ensureTenantCache()
+  ensureTenantCache()
 
-  for (const config of tenantCache.values()) {
+  const configs = Array.from(tenantCache.values())
+
+  for (const config of configs) {
     if (normalizeHost(config.rootDomain) === host) {
       return config
     }
@@ -235,4 +235,5 @@ export const resolveTenantContext = async ({
 
 export const __clearTenantCacheForTests = () => {
   tenantCache.clear()
+  cachedEnvSignature = null
 }

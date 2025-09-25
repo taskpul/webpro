@@ -1,0 +1,37 @@
+name: Frontend CI
+
+on:
+  push:
+    paths:
+      - 'front/**'
+  pull_request:
+    paths:
+      - 'front/**'
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: front
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'yarn'
+          cache-dependency-path: front/yarn.lock
+
+      - name: Install dependencies
+        run: yarn install --immutable
+
+      - name: Run lint
+        run: yarn lint
+
+      - name: Run tests
+        run: yarn test
+        env:
+          CI: '1'

@@ -27,15 +27,21 @@ export const getMedusaSdk = async (options?: {
   host?: string | null
   pathname?: string | null
 }): Promise<TenantAwareMedusa> => {
-  const headerList = headers()
+  let headerList: Awaited<ReturnType<typeof headers>> | null = null
+
+  try {
+    headerList = await headers()
+  } catch {
+    headerList = null
+  }
 
   const host =
     options?.host ??
-    headerList.get("x-forwarded-host") ??
-    headerList.get("host") ??
+    headerList?.get("x-forwarded-host") ??
+    headerList?.get("host") ??
     null
 
-  const pathname = options?.pathname ?? headerList.get("x-pathname") ?? null
+  const pathname = options?.pathname ?? headerList?.get("x-pathname") ?? null
 
   const tenant = await resolveTenantContext({ host, pathname })
 
