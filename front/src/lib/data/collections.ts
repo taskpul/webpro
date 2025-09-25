@@ -1,10 +1,11 @@
 "use server"
 
-import { sdk } from "@lib/config"
+import { getMedusaSdk } from "@lib/config"
 import { HttpTypes } from "@medusajs/types"
 import { getCacheOptions } from "./cookies"
 
 export const retrieveCollection = async (id: string) => {
+  const { sdk } = await getMedusaSdk()
   const next = {
     ...(await getCacheOptions("collections")),
   }
@@ -23,6 +24,7 @@ export const retrieveCollection = async (id: string) => {
 export const listCollections = async (
   queryParams: Record<string, string> = {}
 ): Promise<{ collections: HttpTypes.StoreCollection[]; count: number }> => {
+  const { sdk } = await getMedusaSdk()
   const next = {
     ...(await getCacheOptions("collections")),
   }
@@ -45,6 +47,7 @@ export const listCollections = async (
 export const getCollectionByHandle = async (
   handle: string
 ): Promise<HttpTypes.StoreCollection> => {
+  const { sdk } = await getMedusaSdk()
   const next = {
     ...(await getCacheOptions("collections")),
   }
