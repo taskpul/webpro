@@ -1,26 +1,21 @@
-import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
-import { migrate } from "@medusajs/medusa/dist/commands/db/migrate"
-import { initializeContainer } from "@medusajs/medusa/dist/loaders"
+import { runTenantMigrations } from "../src/modules/tenant/tenant-migration-runner"
 
 async function run() {
   const directory = process.env.MEDUSA_PROJECT_DIR || process.cwd()
+  const databaseUrl = process.env.DATABASE_URL
 
-  const container = await initializeContainer(directory)
-  const logger = container.resolve(ContainerRegistrationKeys.LOGGER)
+  if (!databaseUrl) {
+    throw new Error("DATABASE_URL must be set to run tenant migrations")
+  }
 
   try {
-    await migrate({
+    await runTenantMigrations({
       directory,
-      skipLinks: false,
-      skipScripts: false,
-      executeAllLinks: false,
-      executeSafeLinks: true,
-      container,
-      logger,
+      databaseUrl,
+      medusaProjectDir: process.env.MEDUSA_PROJECT_DIR,
     })
-    logger.info("✅ Tenant migrations completed")
   } catch (error) {
-    logger.error("❌ Tenant migration workflow failed", error)
+    console.error("❌ Tenant migration workflow failed", error)
     process.exitCode = 1
     throw error
   }
