@@ -1,4 +1,6 @@
 import { Router } from "express"
+import { TENANT_SERVICE } from "../../../modules/tenant"
+import type { TenantService } from "../../../modules/tenant/tenant-service"
 
 export default (router: Router) => {
   const route = Router()
@@ -7,7 +9,7 @@ export default (router: Router) => {
   router.use("/", route)
 
   route.get("/", async (req, res) => {
-    const tenantService = req.scope.resolve("tenantService")
+    const tenantService = req.scope.resolve<TenantService>(TENANT_SERVICE)
 
     try {
       const tenants = await tenantService.list()
