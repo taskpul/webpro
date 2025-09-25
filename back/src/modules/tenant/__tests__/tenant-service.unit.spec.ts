@@ -140,6 +140,7 @@ describe("TenantService", () => {
 
     expect(tenant.name).toBe("Acme Corp")
     expect(tenant.dbName).toBe("db_acme_corp")
+    expect(tenant.subdomain).toBe("acme-corp.example.com")
 
     expect(managerQuery).toHaveBeenCalledWith(
       'CREATE EXTENSION IF NOT EXISTS "pgcrypto";'
@@ -152,6 +153,22 @@ describe("TenantService", () => {
     expect(managerQuery).toHaveBeenCalledWith(
       "SELECT 1 FROM pg_database WHERE datname = $1",
       [tenant.dbName]
+    )
+
+    expect(repo.findOne).toHaveBeenCalledWith({
+      where: [
+        { name: "Acme Corp" },
+        { subdomain: "acme-corp.example.com" },
+        { dbName: "db_acme_corp" },
+      ],
+    })
+
+    expect(repo.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: "Acme Corp",
+        subdomain: "acme-corp.example.com",
+        dbName: "db_acme_corp",
+      })
     )
 
     expect(migrationRunner).toHaveBeenCalledTimes(1)
@@ -221,6 +238,47 @@ describe("TenantService", () => {
         adminPassword: "secret",
       })
     ).rejects.toThrow("Tenant with matching name, subdomain, or database already exists")
+
+    expect(migrationRunner).not.toHaveBeenCalled()
+  })
+
+  it("slugifies provided subdomain overrides and stores the hostname", async () => {
+    const { service, repo } = setupService({
+      options: { rootDomain: "Sites.Test" },
+    })
+
+    repo.findOne.mockResolvedValue(null)
+
+    const tenant = await service.create({
+      name: "VIP Tenant",
+      adminEmail: "owner@vip.test",
+      adminPassword: "secret",
+      subdomain: "VIP",
+    })
+
+    expect(tenant.subdomain).toBe("vip.sites.test")
+    expect(repo.findOne).toHaveBeenCalledWith({
+      where: [
+        { name: "VIP Tenant" },
+        { subdomain: "vip.sites.test" },
+        { dbName: "db_vip_tenant" },
+      ],
+    })
+  })
+
+  it("rejects subdomain overrides that do not contain alphanumeric characters", async () => {
+    const { service, repo, migrationRunner } = setupService()
+
+    repo.findOne.mockResolvedValue(null)
+
+    await expect(
+      service.create({
+        name: "Bad Tenant",
+        adminEmail: "owner@bad.test",
+        adminPassword: "secret",
+        subdomain: "!!!",
+      })
+    ).rejects.toThrow("Subdomain slug must include alphanumeric characters")
 
     expect(migrationRunner).not.toHaveBeenCalled()
   })
