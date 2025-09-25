@@ -1,10 +1,11 @@
 "use server"
 
-import { sdk } from "@lib/config"
+import { getMedusaSdk } from "@lib/config"
 import { HttpTypes } from "@medusajs/types"
 import { getAuthHeaders, getCacheOptions } from "./cookies"
 
 export const listCartShippingMethods = async (cartId: string) => {
+  const { sdk } = await getMedusaSdk()
   const headers = {
     ...(await getAuthHeaders()),
   }
@@ -37,6 +38,7 @@ export const calculatePriceForShippingOption = async (
   cartId: string,
   data?: Record<string, unknown>
 ) => {
+  const { sdk } = await getMedusaSdk()
   const headers = {
     ...(await getAuthHeaders()),
   }

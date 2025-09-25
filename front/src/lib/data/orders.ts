@@ -1,11 +1,12 @@
 "use server"
 
-import { sdk } from "@lib/config"
+import { getMedusaSdk } from "@lib/config"
 import medusaError from "@lib/util/medusa-error"
 import { getAuthHeaders, getCacheOptions } from "./cookies"
 import { HttpTypes } from "@medusajs/types"
 
 export const retrieveOrder = async (id: string) => {
+  const { sdk } = await getMedusaSdk()
   const headers = {
     ...(await getAuthHeaders()),
   }
@@ -34,6 +35,7 @@ export const listOrders = async (
   offset: number = 0,
   filters?: Record<string, any>
 ) => {
+  const { sdk } = await getMedusaSdk()
   const headers = {
     ...(await getAuthHeaders()),
   }
@@ -72,6 +74,7 @@ export const createTransferRequest = async (
   error: string | null
   order: HttpTypes.StoreOrder | null
 }> => {
+  const { sdk } = await getMedusaSdk()
   const id = formData.get("order_id") as string
 
   if (!id) {
@@ -94,6 +97,7 @@ export const createTransferRequest = async (
 }
 
 export const acceptTransferRequest = async (id: string, token: string) => {
+  const { sdk } = await getMedusaSdk()
   const headers = await getAuthHeaders()
 
   return await sdk.store.order
@@ -103,6 +107,7 @@ export const acceptTransferRequest = async (id: string, token: string) => {
 }
 
 export const declineTransferRequest = async (id: string, token: string) => {
+  const { sdk } = await getMedusaSdk()
   const headers = await getAuthHeaders()
 
   return await sdk.store.order

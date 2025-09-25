@@ -1,6 +1,6 @@
 "use server"
 
-import { sdk } from "@lib/config"
+import { getMedusaSdk } from "@lib/config"
 import medusaError from "@lib/util/medusa-error"
 import { HttpTypes } from "@medusajs/types"
 import { revalidateTag } from "next/cache"
@@ -21,6 +21,7 @@ import { getRegion } from "./regions"
  * @returns The cart object if found, or null if not found.
  */
 export async function retrieveCart(cartId?: string, fields?: string) {
+  const { sdk } = await getMedusaSdk()
   const id = cartId || (await getCartId())
   fields ??= "*items, *region, *items.product, *items.variant, *items.thumbnail, *items.metadata, +items.total, *promotions, +shipping_methods.name"
 
@@ -51,6 +52,7 @@ export async function retrieveCart(cartId?: string, fields?: string) {
 }
 
 export async function getOrSetCart(countryCode: string) {
+  const { sdk } = await getMedusaSdk()
   const region = await getRegion(countryCode)
 
   if (!region) {
@@ -87,6 +89,7 @@ export async function getOrSetCart(countryCode: string) {
 }
 
 export async function updateCart(data: HttpTypes.StoreUpdateCart) {
+  const { sdk } = await getMedusaSdk()
   const cartId = await getCartId()
 
   if (!cartId) {
@@ -120,6 +123,7 @@ export async function addToCart({
   quantity: number
   countryCode: string
 }) {
+  const { sdk } = await getMedusaSdk()
   if (!variantId) {
     throw new Error("Missing variant ID when adding to cart")
   }
@@ -161,6 +165,7 @@ export async function updateLineItem({
   lineId: string
   quantity: number
 }) {
+  const { sdk } = await getMedusaSdk()
   if (!lineId) {
     throw new Error("Missing lineItem ID when updating line item")
   }
@@ -188,6 +193,7 @@ export async function updateLineItem({
 }
 
 export async function deleteLineItem(lineId: string) {
+  const { sdk } = await getMedusaSdk()
   if (!lineId) {
     throw new Error("Missing lineItem ID when deleting line item")
   }
@@ -221,6 +227,7 @@ export async function setShippingMethod({
   cartId: string
   shippingMethodId: string
 }) {
+  const { sdk } = await getMedusaSdk()
   const headers = {
     ...(await getAuthHeaders()),
   }
@@ -238,6 +245,7 @@ export async function initiatePaymentSession(
   cart: HttpTypes.StoreCart,
   data: HttpTypes.StoreInitializePaymentSession
 ) {
+  const { sdk } = await getMedusaSdk()
   const headers = {
     ...(await getAuthHeaders()),
   }
@@ -253,6 +261,7 @@ export async function initiatePaymentSession(
 }
 
 export async function applyPromotions(codes: string[]) {
+  const { sdk } = await getMedusaSdk()
   const cartId = await getCartId()
 
   if (!cartId) {
@@ -389,6 +398,7 @@ export async function setAddresses(currentState: unknown, formData: FormData) {
  * @returns The cart object if the order was successful, or null if not.
  */
 export async function placeOrder(cartId?: string) {
+  const { sdk } = await getMedusaSdk()
   const id = cartId || (await getCartId())
 
   if (!id) {
@@ -451,6 +461,7 @@ export async function updateRegion(countryCode: string, currentPath: string) {
 }
 
 export async function listCartOptions() {
+  const { sdk } = await getMedusaSdk()
   const cartId = await getCartId()
   const headers = {
     ...(await getAuthHeaders()),

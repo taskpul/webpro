@@ -1,14 +1,66 @@
 import Medusa from "@medusajs/js-sdk"
+import { headers } from "next/headers"
 
-// Defaults to standard port for Medusa server
-let MEDUSA_BACKEND_URL = "http://localhost:9000"
+import {
+  resolveTenantContext,
+  type TenantContext,
+} from "./tenants/resolver"
 
-if (process.env.MEDUSA_BACKEND_URL) {
-  MEDUSA_BACKEND_URL = process.env.MEDUSA_BACKEND_URL
+type MedusaCacheKey = `${string}::${string}`
+
+const sdkCache = new Map<MedusaCacheKey, Medusa>()
+
+const getDefaultStorefrontSettings = () => ({
+  medusaUrl: process.env.MEDUSA_BACKEND_URL ?? "http://localhost:9000",
+  publishableKey: process.env.NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY ?? "",
+})
+
+const createCacheKey = (url: string, publishableKey: string): MedusaCacheKey =>
+  `${url}::${publishableKey}`
+
+export type TenantAwareMedusa = {
+  sdk: Medusa
+  tenant: TenantContext
 }
 
-export const sdk = new Medusa({
-  baseUrl: MEDUSA_BACKEND_URL,
-  debug: process.env.NODE_ENV === "development",
-  publishableKey: process.env.NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY,
-})
+export const getMedusaSdk = async (options?: {
+  host?: string | null
+  pathname?: string | null
+}): Promise<TenantAwareMedusa> => {
+  const headerList = headers()
+
+  const host =
+    options?.host ??
+    headerList.get("x-forwarded-host") ??
+    headerList.get("host") ??
+    null
+
+  const pathname = options?.pathname ?? headerList.get("x-pathname") ?? null
+
+  const tenant = await resolveTenantContext({ host, pathname })
+
+  const storefront = tenant.storefront ?? getDefaultStorefrontSettings()
+
+  const cacheKey = createCacheKey(
+    storefront.medusaUrl,
+    storefront.publishableKey ?? ""
+  )
+
+  let sdk = sdkCache.get(cacheKey)
+
+  if (!sdk) {
+    sdk = new Medusa({
+      baseUrl: storefront.medusaUrl,
+      debug: process.env.NODE_ENV === "development",
+      publishableKey: storefront.publishableKey || undefined,
+    })
+
+    sdkCache.set(cacheKey, sdk)
+  }
+
+  return { sdk, tenant }
+}
+
+export const __clearMedusaCacheForTests = () => {
+  sdkCache.clear()
+}
