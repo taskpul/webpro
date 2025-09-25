@@ -77,14 +77,16 @@ tenantService.create({
   name: "tenant-a",             // required, used to generate slug and db name
   adminEmail: "owner@a.test",   // required, login for the admin
   adminPassword: "strong-pass", // required, hashed with bcrypt
-  subdomain: "shop.example.com",// optional override
+  subdomain: "shop",            // optional slug override (hostname = shop.<rootDomain>)
   dbName: "db_tenant_a",        // optional override
 })
 ```
 
 This method enforces unique registry entries and is idempotent for database and
 admin provisioning: if the database already exists or the admin email is in use
-the records are updated rather than duplicated.
+the records are updated rather than duplicated. When providing a `subdomain`
+override pass only the slug portion (`shop`), the service expands it to the full
+hostname by appending the configured `rootDomain` before validation.
 
 ### `delete`
 

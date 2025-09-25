@@ -136,8 +136,8 @@ export class TenantService {
     const dbName = input.dbName ?? defaultDbName
     this.assertIdentifier(dbName, "database name")
 
-    const subdomain =
-      input.subdomain ?? `${slug}.${this.options.rootDomain}`
+    const subdomainSlug = this.resolveSubdomainSlug(input.subdomain, slug)
+    const subdomain = this.buildTenantHostname(subdomainSlug)
 
     await this.ensureTenantRegistry()
 
@@ -209,8 +209,9 @@ export class TenantService {
   ): ResolvedTenantServiceOptions {
     const env = process.env
 
-    const rootDomain =
+    const rootDomainSource =
       overrides?.rootDomain ?? env.ROOT_DOMAIN ?? "example.com"
+    const rootDomain = rootDomainSource.trim().toLowerCase()
 
     const database = {
       host: overrides?.database?.host ?? env.DB_HOST ?? "localhost",
@@ -377,6 +378,32 @@ export class TenantService {
     return `postgres://${encodedUser}:${encodedPassword}@${host}:${port}/${dbName}`
   }
 
+  private resolveSubdomainSlug(
+    provided: string | undefined,
+    fallback: string
+  ): string {
+    if (!provided) {
+      return fallback
+    }
+
+    const slug = this.slugify(provided)
+
+    if (!slug) {
+      throw new MedusaError(
+        MedusaError.Types.INVALID_DATA,
+        "Subdomain slug must include alphanumeric characters"
+      )
+    }
+
+    return slug
+  }
+
+  private buildTenantHostname(slug: string): string {
+    const host = `${slug}.${this.options.rootDomain}`
+    this.assertHostname(host, "subdomain hostname")
+    return host
+  }
+
   private slugify(value: string): string {
     return value
       .toLowerCase()
@@ -386,6 +413,18 @@ export class TenantService {
 
   private assertIdentifier(value: string, label: string): void {
     if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(value)) {
+      throw new MedusaError(
+        MedusaError.Types.INVALID_DATA,
+        `Invalid ${label}: ${value}`
+      )
+    }
+  }
+
+  private assertHostname(value: string, label: string): void {
+    const hostnameRegex =
+      /^(?!-)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)(?:\.(?!-)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/
+
+    if (!hostnameRegex.test(value)) {
       throw new MedusaError(
         MedusaError.Types.INVALID_DATA,
         `Invalid ${label}: ${value}`
