@@ -56,7 +56,13 @@ const defaultOptions: TenantServiceOptions = {
 
 const buildPgClient = (): MockPgClient => ({
   connect: jest.fn().mockResolvedValue(undefined),
-  query: jest.fn().mockResolvedValue({ rows: [] }),
+  query: jest.fn().mockImplementation(async (sql: unknown) => {
+    if (typeof sql === "string" && sql.includes("to_regclass")) {
+      return { rows: [{ table_name: "public.user" }] }
+    }
+
+    return { rows: [] }
+  }),
   end: jest.fn().mockResolvedValue(undefined),
 })
 
@@ -66,26 +72,36 @@ const setupService = (
     manager?: MockManager
     client?: MockPgClient
     options?: Partial<TenantServiceOptions>
+    migrationRunner?: jest.Mock
   } = {}
 ) => {
   const repo = overrides.repo ?? buildRepo()
   const manager = overrides.manager ?? buildManager(repo)
   const client = overrides.client ?? buildPgClient()
+  const migrationRunner =
+    overrides.migrationRunner ?? jest.fn().mockResolvedValue(undefined)
 
-  const tenantServiceOptions = overrides.options
-    ? {
-        ...defaultOptions,
-        ...overrides.options,
-        database: {
-          ...defaultOptions.database,
-          ...overrides.options.database,
-        },
-        admin: {
-          ...defaultOptions.admin,
-          ...overrides.options.admin,
-        },
-      }
-    : defaultOptions
+  const { migrations: overrideMigrations, ...optionOverrides } =
+    overrides.options ?? {}
+
+  const tenantServiceOptions: TenantServiceOptions = {
+    ...defaultOptions,
+    ...optionOverrides,
+    database: {
+      ...defaultOptions.database,
+      ...optionOverrides?.database,
+    },
+    admin: {
+      ...defaultOptions.admin,
+      ...optionOverrides?.admin,
+    },
+    migrations: {
+      directory: overrideMigrations?.directory ?? "/app/backend",
+      medusaProjectDir:
+        overrideMigrations?.medusaProjectDir ?? "/app/backend",
+      runner: overrideMigrations?.runner ?? migrationRunner,
+    },
+  }
 
   const service = new TenantService({
     manager: manager as unknown as EntityManager,
@@ -93,7 +109,7 @@ const setupService = (
     createPgClient: () => client,
   })
 
-  return { service, manager, repo, client }
+  return { service, manager, repo, client, migrationRunner }
 }
 
 describe("TenantService", () => {
@@ -102,7 +118,7 @@ describe("TenantService", () => {
   })
 
   it("creates a tenant, database, and admin user", async () => {
-    const { service, manager, repo, client } = setupService()
+    const { service, manager, repo, client, migrationRunner } = setupService()
 
     const managerQuery = manager.query as jest.Mock
     managerQuery.mockImplementation(async (sql: string, params?: unknown[]) => {
@@ -138,10 +154,19 @@ describe("TenantService", () => {
       [tenant.dbName]
     )
 
+    expect(migrationRunner).toHaveBeenCalledTimes(1)
+    expect(migrationRunner).toHaveBeenCalledWith(
+      expect.objectContaining({
+        directory: "/app/backend",
+        databaseUrl:
+          "postgres://postgres:postgres@localhost:5432/" + tenant.dbName,
+      })
+    )
+
     expect(client.connect).toHaveBeenCalled()
     expect(
       client.query.mock.calls.some(([sql]) =>
-        typeof sql === "string" && sql.includes("CREATE TABLE IF NOT EXISTS public.\"user\"")
+        typeof sql === "string" && sql.includes("to_regclass")
       )
     ).toBe(true)
 
@@ -151,12 +176,13 @@ describe("TenantService", () => {
 
     expect(insertCall).toBeDefined()
     const [, params] = insertCall as [string, unknown[]]
-    expect(params?.[0]).toBe(payload.adminEmail)
-    expect(params?.[1]).not.toBe(payload.adminPassword)
+    expect(typeof params?.[0]).toBe("string")
+    expect(params?.[1]).toBe(payload.adminEmail.toLowerCase())
+    expect(params?.[2]).not.toBe(payload.adminPassword)
   })
 
   it("does not recreate an existing database", async () => {
-    const { service, manager, repo, client } = setupService()
+    const { service, manager, repo, client, migrationRunner } = setupService()
 
     const managerQuery = manager.query as jest.Mock
     managerQuery.mockImplementation(async (sql: string) => {
@@ -180,10 +206,11 @@ describe("TenantService", () => {
       ).length
     ).toBe(0)
     expect(client.connect).toHaveBeenCalled()
+    expect(migrationRunner).toHaveBeenCalledTimes(1)
   })
 
   it("throws when attempting to create a duplicate tenant", async () => {
-    const { service, repo } = setupService()
+    const { service, repo, migrationRunner } = setupService()
 
     repo.findOne.mockResolvedValue({ id: "1" })
 
@@ -194,6 +221,37 @@ describe("TenantService", () => {
         adminPassword: "secret",
       })
     ).rejects.toThrow("Tenant with matching name, subdomain, or database already exists")
+
+    expect(migrationRunner).not.toHaveBeenCalled()
+  })
+
+  it("throws when Medusa schema is missing after migrations", async () => {
+    const client = buildPgClient()
+    client.query.mockImplementation(async (sql: unknown) => {
+      if (typeof sql === "string" && sql.includes("to_regclass")) {
+        return { rows: [{ table_name: null }] }
+      }
+
+      return { rows: [] }
+    })
+
+    const { service, repo, migrationRunner, client: injectedClient } =
+      setupService({
+        client,
+      })
+
+    repo.findOne.mockResolvedValue(null)
+
+    await expect(
+      service.create({
+        name: "Broken",
+        adminEmail: "broken@acme.test",
+        adminPassword: "secret",
+      })
+    ).rejects.toThrow("Medusa migrations did not create the expected user table")
+
+    expect(migrationRunner).toHaveBeenCalledTimes(1)
+    expect(injectedClient.end).toHaveBeenCalled()
   })
 
   it("drops the database when deleting a tenant", async () => {

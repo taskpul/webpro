@@ -2,6 +2,7 @@ import { asClass, asValue } from "awilix"
 import TenantService, {
   TenantCreateInput,
   TenantDeleteInput,
+  TenantServiceMigrationOptions,
   TenantServiceOptions,
 } from "./tenant-service"
 import TenantSignupService from "./tenant-signup-service"
@@ -21,6 +22,11 @@ const register = (
 }
 
 export { TenantService, TenantSignupService, Tenant }
-export type { TenantCreateInput, TenantDeleteInput, TenantServiceOptions }
+export type {
+  TenantCreateInput,
+  TenantDeleteInput,
+  TenantServiceMigrationOptions,
+  TenantServiceOptions,
+}
 
 export default register

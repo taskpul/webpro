@@ -1,8 +1,13 @@
+import { randomUUID } from "crypto"
 import { MedusaError } from "medusa-core-utils"
 import bcrypt from "bcryptjs"
 import { Client, ClientConfig } from "pg"
 import { EntityManager } from "typeorm"
 import Tenant from "./tenant-model"
+import {
+  TenantMigrationRunner,
+  runTenantMigrations,
+} from "./tenant-migration-runner"
 
 type PgClientLike = {
   connect: () => Promise<void>
@@ -11,6 +16,12 @@ type PgClientLike = {
 }
 
 type PgClientFactory = (database: string) => PgClientLike
+
+export type TenantServiceMigrationOptions = {
+  directory?: string
+  medusaProjectDir?: string
+  runner?: TenantMigrationRunner
+}
 
 export type TenantServiceOptions = {
   rootDomain: string
@@ -26,6 +37,7 @@ export type TenantServiceOptions = {
     promoteToSuperAdmin: boolean
     bcryptSaltRounds: number
   }
+  migrations?: TenantServiceMigrationOptions
 }
 
 export type TenantCreateInput = {
@@ -43,10 +55,19 @@ export type TenantDeleteInput = {
 
 const DEFAULT_SALT_ROUNDS = 10
 
+type ResolvedTenantServiceOptions = Omit<TenantServiceOptions, "migrations"> & {
+  migrations: {
+    directory: string
+    medusaProjectDir?: string
+    runner: TenantMigrationRunner
+  }
+}
+
 export class TenantService {
   private readonly manager: EntityManager
-  private readonly options: TenantServiceOptions
+  private readonly options: ResolvedTenantServiceOptions
   private readonly createPgClient: PgClientFactory
+  private readonly migrationRunner: TenantMigrationRunner
   private registryEnsured = false
 
   constructor(
@@ -77,6 +98,7 @@ export class TenantService {
         }
         return new Client(config)
       })
+    this.migrationRunner = this.options.migrations.runner
   }
 
   async create(input: TenantCreateInput): Promise<Tenant> {
@@ -184,7 +206,7 @@ export class TenantService {
 
   private buildOptions(
     overrides?: Partial<TenantServiceOptions>
-  ): TenantServiceOptions {
+  ): ResolvedTenantServiceOptions {
     const env = process.env
 
     const rootDomain =
@@ -206,10 +228,23 @@ export class TenantService {
         overrides?.admin?.bcryptSaltRounds ?? DEFAULT_SALT_ROUNDS,
     }
 
+    const migrationsDirectory =
+      overrides?.migrations?.directory ??
+      env.MEDUSA_PROJECT_DIR ??
+      process.cwd()
+
+    const migrations: ResolvedTenantServiceOptions["migrations"] = {
+      directory: migrationsDirectory,
+      medusaProjectDir:
+        overrides?.migrations?.medusaProjectDir ?? env.MEDUSA_PROJECT_DIR,
+      runner: overrides?.migrations?.runner ?? runTenantMigrations,
+    }
+
     return {
       rootDomain,
       database,
       admin,
+      migrations,
     }
   }
 
@@ -269,25 +304,17 @@ export class TenantService {
     adminEmail: string,
     adminPassword: string
   ): Promise<void> {
+    await this.migrationRunner({
+      directory: this.options.migrations.directory,
+      databaseUrl: this.buildDatabaseUrl(dbName),
+      medusaProjectDir: this.options.migrations.medusaProjectDir,
+    })
+
     const client = this.createPgClient(dbName)
     await client.connect()
 
     try {
-      await client.query('CREATE EXTENSION IF NOT EXISTS "pgcrypto";')
-      await client.query(`
-        CREATE TABLE IF NOT EXISTS public."user" (
-          id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-          email text UNIQUE NOT NULL,
-          password_hash text,
-          role text NOT NULL DEFAULT 'member',
-          is_super_admin boolean NOT NULL DEFAULT false,
-          created_at timestamptz NOT NULL DEFAULT now(),
-          updated_at timestamptz NOT NULL DEFAULT now()
-        );
-      `)
-      await client.query(
-        'CREATE UNIQUE INDEX IF NOT EXISTS idx_user_email ON public."user"(email);'
-      )
+      await this.assertMedusaSchema(client)
 
       const hashedPassword = await bcrypt.hash(
         adminPassword,
@@ -305,7 +332,7 @@ export class TenantService {
             created_at,
             updated_at
           )
-          VALUES (gen_random_uuid(), $1, $2, $3, $4, NOW(), NOW())
+          VALUES ($1, $2, $3, $4, $5, NOW(), NOW())
           ON CONFLICT (email)
           DO UPDATE SET
             password_hash = EXCLUDED.password_hash,
@@ -314,6 +341,7 @@ export class TenantService {
             updated_at = NOW();
         `,
         [
+          randomUUID(),
           adminEmail,
           hashedPassword,
           this.options.admin.role,
@@ -323,6 +351,30 @@ export class TenantService {
     } finally {
       await client.end()
     }
+  }
+
+  private async assertMedusaSchema(client: PgClientLike): Promise<void> {
+    const result = (await client.query(
+      'SELECT to_regclass(\'public."user"\') AS table_name;'
+    )) as { rows?: Array<{ table_name: string | null }> }
+
+    const tableName = Array.isArray(result?.rows)
+      ? result.rows[0]?.table_name
+      : undefined
+
+    if (!tableName) {
+      throw new MedusaError(
+        MedusaError.Types.UNEXPECTED_STATE,
+        "Medusa migrations did not create the expected user table"
+      )
+    }
+  }
+
+  private buildDatabaseUrl(dbName: string): string {
+    const { host, port, user, password } = this.options.database
+    const encodedUser = encodeURIComponent(user)
+    const encodedPassword = encodeURIComponent(password)
+    return `postgres://${encodedUser}:${encodedPassword}@${host}:${port}/${dbName}`
   }
 
   private slugify(value: string): string {
