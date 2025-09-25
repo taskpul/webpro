@@ -103,6 +103,7 @@ const loadTenantConfigs = async (): Promise<void> => {
   await Promise.all(
     files
       .filter((file) => file.endsWith(".json"))
+      .sort((a, b) => a.localeCompare(b))
       .map(async (file) => {
         const absolute = path.join(directory, file)
         const data = await fs.readFile(absolute, "utf-8")
@@ -151,13 +152,21 @@ const findTenantByHost = async (host: string): Promise<TenantConfig | null> => {
 const resolvePrimaryDomain = async (host: string): Promise<TenantConfig | null> => {
   await ensureTenantCache()
 
+  const matches: TenantConfig[] = []
+
   for (const config of tenantCache.values()) {
     if (normalizeHost(config.rootDomain) === host) {
-      return config
+      matches.push(config)
     }
   }
 
-  return null
+  if (matches.length === 0) {
+    return null
+  }
+
+  matches.sort((a, b) => a.tenant.localeCompare(b.tenant))
+
+  return matches[0]
 }
 
 const getDefaultStorefront = (): TenantStorefrontSettings => ({

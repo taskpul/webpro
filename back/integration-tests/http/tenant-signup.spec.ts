@@ -71,6 +71,10 @@ const startServer = () => {
   const { port } = server.address() as AddressInfo
   const baseUrl = `http://127.0.0.1:${port}`
 
+  const request = (path: string, init?: RequestInit) => {
+    return fetch(`${baseUrl}${path}`, init)
+  }
+
   const requestJson = async (
     method: string,
     path: string,
@@ -98,10 +102,146 @@ const startServer = () => {
     await new Promise<void>((resolve) => server.close(() => resolve()))
   }
 
-  return { requestJson, close, tenantService }
+  return { requestJson, request, close, tenantService, baseUrl }
+}
+
+const snapshotEnv = (keys: string[]) => {
+  const previous = new Map<string, string | undefined>()
+
+  keys.forEach((key) => {
+    previous.set(key, process.env[key])
+  })
+
+  return () => {
+    keys.forEach((key) => {
+      const value = previous.get(key)
+      if (value === undefined) {
+        delete process.env[key]
+        return
+      }
+
+      process.env[key] = value
+    })
+  }
 }
 
 describe("Public tenant signup", () => {
+  it("redirects GET requests to the configured storefront experience", async () => {
+    const restoreEnv = snapshotEnv([
+      "TENANT_SIGNUP_STOREFRONT_URL",
+      "NEXT_PUBLIC_BASE_URL",
+      "WORDPRESS_SIGNUP_URL",
+      "WORDPRESS_SIGNUP_DOMAIN",
+    ])
+
+    process.env.TENANT_SIGNUP_STOREFRONT_URL = "https://front.example.com"
+    delete process.env.NEXT_PUBLIC_BASE_URL
+    delete process.env.WORDPRESS_SIGNUP_URL
+    delete process.env.WORDPRESS_SIGNUP_DOMAIN
+
+    const server = startServer()
+
+    try {
+      const response = await server.request("/public/tenants/signup?tenant=acme", {
+        method: "GET",
+        redirect: "manual",
+      })
+
+      expect(response.status).toBe(302)
+      expect(response.headers.get("location")).toBe(
+        "https://front.example.com/public/tenants/signup?tenant=acme"
+      )
+    } finally {
+      restoreEnv()
+      await server.close()
+    }
+  })
+
+  it("redirects WordPress network hosts to the multisite signup flow", async () => {
+    const restoreEnv = snapshotEnv([
+      "TENANT_SIGNUP_STOREFRONT_URL",
+      "WORDPRESS_NETWORK_HOSTS",
+      "WORDPRESS_SIGNUP_PATH",
+      "WORDPRESS_SIGNUP_PROTOCOL",
+      "WORDPRESS_SIGNUP_DOMAIN",
+      "WORDPRESS_SIGNUP_URL",
+    ])
+
+    delete process.env.TENANT_SIGNUP_STOREFRONT_URL
+    process.env.WORDPRESS_NETWORK_HOSTS = "network.example.com"
+    process.env.WORDPRESS_SIGNUP_PATH = "/wp-signup.php"
+    process.env.WORDPRESS_SIGNUP_PROTOCOL = "https"
+    delete process.env.WORDPRESS_SIGNUP_DOMAIN
+    delete process.env.WORDPRESS_SIGNUP_URL
+
+    const server = startServer()
+
+    try {
+      const response = await server.request(
+        "/public/tenants/signup?tenant=network-site",
+        {
+          method: "GET",
+          headers: {
+            "x-forwarded-host": "network.example.com",
+            "x-forwarded-proto": "https",
+          },
+          redirect: "manual",
+        }
+      )
+
+      expect(response.status).toBe(302)
+
+      const location = response.headers.get("location")
+      expect(location).toBeDefined()
+
+      const url = new URL(location ?? "")
+      expect(`${url.protocol}//${url.host}${url.pathname}`).toBe(
+        "https://network.example.com/wp-signup.php"
+      )
+      expect(url.searchParams.get("new")).toBe("network-site")
+      expect(url.searchParams.get("tenant")).toBe("network-site")
+    } finally {
+      restoreEnv()
+      await server.close()
+    }
+  })
+
+  it("renders a fallback HTML experience when no redirect target is configured", async () => {
+    const restoreEnv = snapshotEnv([
+      "TENANT_SIGNUP_STOREFRONT_URL",
+      "NEXT_PUBLIC_BASE_URL",
+      "WORDPRESS_SIGNUP_URL",
+      "WORDPRESS_SIGNUP_DOMAIN",
+      "WORDPRESS_NETWORK_HOSTS",
+    ])
+
+    delete process.env.TENANT_SIGNUP_STOREFRONT_URL
+    delete process.env.NEXT_PUBLIC_BASE_URL
+    delete process.env.WORDPRESS_SIGNUP_URL
+    delete process.env.WORDPRESS_SIGNUP_DOMAIN
+    delete process.env.WORDPRESS_NETWORK_HOSTS
+
+    const server = startServer()
+
+    try {
+      const response = await server.request("/public/tenants/signup?site=alpha", {
+        method: "GET",
+        redirect: "manual",
+      })
+
+      expect(response.status).toBe(200)
+      expect(response.headers.get("content-type")).toContain("text/html")
+
+      const body = await response.text()
+      expect(body).toContain("Provision a Medusa storefront")
+      expect(body).toContain("form method=\"post\"")
+      expect(body).toContain("value=\"alpha\"")
+    } finally {
+      restoreEnv()
+      await server.close()
+    }
+  })
+
   it("provisions tenants through the shared tenant service", async () => {
     const server = startServer()
 
