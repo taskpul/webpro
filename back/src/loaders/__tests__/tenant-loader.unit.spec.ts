@@ -1,22 +1,41 @@
+import path from "path"
 import type { Request, Response, NextFunction } from "express"
 
 type QueryHandlerMap = Record<string, jest.Mock>
 type ManagerMap = Record<string, unknown>
 
+type MockDataSourceOptions = {
+  url?: string
+  entities?: string[]
+  migrations?: string[]
+}
+
+type MockedDataSourceInstance = {
+  isInitialized: boolean
+  manager: unknown
+  options: MockDataSourceOptions
+  initialize: jest.Mock
+  query: jest.Mock
+}
+
 const queryHandlers: QueryHandlerMap = {}
 const managers: ManagerMap = {}
+const dataSources: Record<string, MockedDataSourceInstance> = {}
 
 jest.mock("typeorm", () => {
   class MockDataSource {
     public isInitialized = false
     public manager: unknown
+    public readonly options: MockDataSourceOptions
     private readonly name: string
 
-    constructor(options: { url?: string }) {
+    constructor(options: MockDataSourceOptions = {}) {
+      this.options = options
       const url = options?.url ?? ""
       const segments = url.split("/")
       this.name = segments[segments.length - 1] || url
       this.manager = managers[this.name] ?? { db: this.name }
+      dataSources[this.name] = this as unknown as MockedDataSourceInstance
     }
 
     initialize = jest.fn().mockImplementation(async () => {
@@ -64,6 +83,12 @@ describe("tenantMiddleware", () => {
     "MAIN_DB",
     "ROOT_DOMAIN",
     "WP_NETWORK_HOSTS",
+    "TENANT_ENTITIES_GLOB",
+    "TENANT_ENTITY_GLOB",
+    "TENANT_ENTITIES_PATH",
+    "TENANT_MIGRATIONS_GLOB",
+    "TENANT_MIGRATION_GLOB",
+    "TENANT_MIGRATIONS_PATH",
   ]
 
   beforeEach(() => {
@@ -76,6 +101,10 @@ describe("tenantMiddleware", () => {
 
     for (const key of Object.keys(managers)) {
       delete managers[key]
+    }
+
+    for (const key of Object.keys(dataSources)) {
+      delete dataSources[key]
     }
 
     for (const key of envKeys) {
@@ -183,5 +212,70 @@ describe("tenantMiddleware", () => {
     expect(secondReq.scope.register).not.toHaveBeenCalled()
     expect(firstNext).toHaveBeenCalledTimes(1)
     expect(secondNext).toHaveBeenCalledTimes(1)
+  })
+
+  it("derives TypeScript ORM globs by default", async () => {
+    const { getTenantConnection } = await loadTenantLoader()
+
+    await getTenantConnection("db_main")
+
+    const dataSource = dataSources.db_main
+    expect(dataSource).toBeDefined()
+    expect(
+      dataSource?.options.entities?.some((glob) => glob.includes("src/modules"))
+    ).toBe(true)
+    expect(
+      dataSource?.options.entities?.some((glob) => glob.includes("**/*.ts"))
+    ).toBe(true)
+    expect(
+      dataSource?.options.migrations?.some((glob) => glob.includes("migrations"))
+    ).toBe(true)
+    expect(
+      dataSource?.options.migrations?.some((glob) => glob.includes("**/*.sql"))
+    ).toBe(true)
+  })
+
+  it("allows overriding ORM globs via environment variables", async () => {
+    process.env.TENANT_ENTITIES_GLOB = "build/server/entities/**/*.js"
+    process.env.TENANT_MIGRATIONS_GLOB = "/var/bundles/migrations/*.js"
+
+    const { getTenantConnection } = await loadTenantLoader()
+
+    await getTenantConnection("db_override")
+
+    const dataSource = dataSources.db_override
+    expect(dataSource?.options.entities).toEqual([
+      path.resolve(process.cwd(), "build/server/entities/**/*.js"),
+    ])
+    expect(dataSource?.options.migrations).toEqual([
+      "/var/bundles/migrations/*.js",
+    ])
+  })
+
+  it("generates compiled runtime ORM globs", async () => {
+    const { resolveTenantOrmPaths } = await loadTenantLoader()
+    const env = {
+      MEDUSA_PROJECT_DIR: "/srv/medusa",
+    } as NodeJS.ProcessEnv
+
+    const { entities, migrations } = resolveTenantOrmPaths({
+      env,
+      loaderDir: "/srv/medusa/.medusa/server/src/loaders",
+    })
+
+    expect(entities).toEqual(
+      expect.arrayContaining([
+        path.join("/srv/medusa/.medusa/server", "src/modules/**/*.js"),
+      ])
+    )
+    expect(entities).toEqual(
+      expect.not.arrayContaining([expect.stringContaining("**/*.ts")])
+    )
+    expect(migrations).toEqual(
+      expect.arrayContaining([
+        path.join("/srv/medusa/.medusa/server", "migrations/**/*.js"),
+        path.join("/srv/medusa", "migrations/**/*.js"),
+      ])
+    )
   })
 })

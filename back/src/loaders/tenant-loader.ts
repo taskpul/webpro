@@ -1,3 +1,4 @@
+import path from "path"
 import { DataSource } from "typeorm"
 import { Request, Response, NextFunction } from "express"
 import { MedusaError } from "medusa-core-utils"
@@ -9,6 +10,11 @@ type TenantRecord = {
 
 const connections: Record<string, DataSource> = {}
 const tenantMetadataCache = new Map<string, TenantRecord | null>()
+
+type TenantOrmPaths = {
+  entities: string[]
+  migrations: string[]
+}
 
 const DEFAULT_NETWORK_PREFIXES = ["network", "wordpress", "wp-admin", "wpadmin"]
 
@@ -101,6 +107,129 @@ const extractSubdomain = (host: string, rootDomain?: string) => {
 const buildLookupKey = (subdomain: string, rootDomain?: string) =>
   rootDomain ? `${subdomain}.${rootDomain}` : subdomain
 
+const parseGlobOverrides = (value?: string | null) =>
+  (value ? value.split(",") : [])
+    .map((glob) => glob.trim())
+    .filter((glob) => glob.length > 0)
+
+const isCompiledRuntime = (loaderDir: string) => {
+  const normalized = path.resolve(loaderDir)
+  const segments = normalized.split(path.sep).filter(Boolean)
+  const medusaIndex = segments.lastIndexOf(".medusa")
+
+  if (medusaIndex === -1) {
+    return false
+  }
+
+  return segments[medusaIndex + 1] === "server"
+}
+
+const pushUnique = (target: string[], value: string) => {
+  if (!target.includes(value)) {
+    target.push(value)
+  }
+}
+
+const resolveTenantOrmPathsInternal = (
+  env: NodeJS.ProcessEnv,
+  loaderDir: string
+): TenantOrmPaths => {
+  const loaderRoot = path.resolve(loaderDir, "..", "..")
+  const compiledRuntime = isCompiledRuntime(loaderDir)
+  const projectRoot = env.MEDUSA_PROJECT_DIR
+    ? path.resolve(env.MEDUSA_PROJECT_DIR)
+    : compiledRuntime
+    ? path.resolve(loaderRoot, "..")
+    : loaderRoot
+
+  const baseCandidates = Array.from(
+    new Set(
+      [
+        loaderRoot,
+        projectRoot,
+        path.join(projectRoot, ".medusa", "server"),
+        path.join(projectRoot, "dist"),
+        path.join(projectRoot, "build"),
+        process.cwd(),
+      ].map((candidate) => path.resolve(candidate))
+    )
+  )
+
+  const entityExtensions = compiledRuntime ? ["js", "cjs"] : ["ts", "js", "cjs"]
+  const migrationExtensions = Array.from(new Set([...entityExtensions, "sql"]))
+
+  const entityDirectories: string[][] = [
+    ["src", "models"],
+    ["src", "modules"],
+    ["models"],
+    ["modules"],
+  ]
+
+  const migrationDirectories: string[][] = [
+    ["migrations"],
+    ["src", "migrations"],
+  ]
+
+  const entities: string[] = []
+  const migrations: string[] = []
+
+  for (const base of baseCandidates) {
+    for (const segments of entityDirectories) {
+      for (const ext of entityExtensions) {
+        pushUnique(entities, path.join(base, ...segments, `**/*.${ext}`))
+      }
+    }
+
+    for (const segments of migrationDirectories) {
+      for (const ext of migrationExtensions) {
+        pushUnique(migrations, path.join(base, ...segments, `**/*.${ext}`))
+      }
+    }
+  }
+
+  const projectRelative = (glob: string) =>
+    path.isAbsolute(glob) ? glob : path.resolve(projectRoot, glob)
+
+  const entityOverrides = parseGlobOverrides(
+    env.TENANT_ENTITIES_GLOB ?? env.TENANT_ENTITY_GLOB ?? env.TENANT_ENTITIES_PATH
+  ).map(projectRelative)
+
+  const migrationOverrides = parseGlobOverrides(
+    env.TENANT_MIGRATIONS_GLOB ??
+      env.TENANT_MIGRATION_GLOB ??
+      env.TENANT_MIGRATIONS_PATH
+  ).map(projectRelative)
+
+  return {
+    entities: entityOverrides.length > 0 ? entityOverrides : entities,
+    migrations: migrationOverrides.length > 0 ? migrationOverrides : migrations,
+  }
+}
+
+export type ResolveTenantOrmPathsOptions = {
+  env?: NodeJS.ProcessEnv
+  loaderDir?: string
+}
+
+export const resolveTenantOrmPaths = (
+  options: ResolveTenantOrmPathsOptions = {}
+): TenantOrmPaths => {
+  const env = options.env ?? process.env
+  const loaderDir = options.loaderDir ?? __dirname
+
+  return resolveTenantOrmPathsInternal(env, loaderDir)
+}
+
+let cachedTenantOrmPaths: TenantOrmPaths | null = null
+
+const getTenantOrmPaths = () => {
+  if (!cachedTenantOrmPaths) {
+    cachedTenantOrmPaths = resolveTenantOrmPaths()
+  }
+
+  return cachedTenantOrmPaths
+}
+
 async function getTenantMetadata(lookupKey: string) {
   if (tenantMetadataCache.has(lookupKey)) {
     return tenantMetadataCache.get(lookupKey) ?? null
@@ -131,11 +260,13 @@ export async function getTenantConnection(dbName: string) {
     return connections[dbName]
   }
 
+  const ormPaths = getTenantOrmPaths()
+
   const dataSource = new DataSource({
     type: "postgres",
     url: `postgres://${process.env.DB_USER}:${process.env.DB_PASS}@${process.env.DB_HOST}:${process.env.DB_PORT}/${dbName}`,
-    entities: ["dist/models/*.js"], // adjust if using TS directly
-    migrations: ["dist/migrations/*.js"],
+    entities: ormPaths.entities,
+    migrations: ormPaths.migrations,
     synchronize: false,
     logging: false,
   })

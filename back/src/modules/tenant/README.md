@@ -49,6 +49,26 @@ registerTenantModule(container, {
 > the options or environment variables. The credentials are required to create
 > and destroy tenant databases.
 
+## Build Output & ORM Paths
+
+The tenant loader automatically detects whether the backend is running directly
+from the TypeScript source (`src/**`) or from a compiled Medusa build (for
+example `.medusa/server/src/**`). It adjusts the TypeORM entity and migration
+globs accordingly so that tenant connections work in development and in
+prebuilt deployments.
+
+You can override the detected globs with environment variables when your
+deployment stores the compiled bundles in a custom location:
+
+| Environment Variable         | Description |
+| ---------------------------- | ----------- |
+| `TENANT_ENTITIES_GLOB`       | Comma-separated glob(s) pointing to the entity files. Relative values are resolved against `MEDUSA_PROJECT_DIR` (or the project root) so you can keep configuration portable. |
+| `TENANT_MIGRATIONS_GLOB`     | Comma-separated glob(s) pointing to migration files. This is useful when migrations are emitted to a build artifact outside of the default project tree. |
+
+> **Tip:** The loader also accepts the singular forms
+> `TENANT_ENTITY_GLOB`/`TENANT_MIGRATION_GLOB` and the legacy
+> `TENANT_ENTITIES_PATH`/`TENANT_MIGRATIONS_PATH` variables for compatibility.
+
 ## Service API
 
 The module exports the `tenantService` token and related types for container
