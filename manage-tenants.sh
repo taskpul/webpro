@@ -7,29 +7,63 @@
 #   ./manage-tenants.sh --list             -> list tenants from db_main
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-ENV_FILE="$SCRIPT_DIR/we/.env"
-BACKEND_DIR="$SCRIPT_DIR/we"
-FRONTEND_DIR="$SCRIPT_DIR/we-storefront"
+ENV_FILE="$SCRIPT_DIR/back/.env"
+BACKEND_DIR="$SCRIPT_DIR/back"
+FRONTEND_DIR="$SCRIPT_DIR/front"
+DEFAULT_TENANT_EXPORT_ROOT="$SCRIPT_DIR/tenants-config"
 
-# Load env vars
+# Ensure Node-based tooling runs from the backend project directory
+export MEDUSA_PROJECT_DIR="$BACKEND_DIR"
+
+# Load env vars (including WordPress multisite settings)
 if [ -f "$ENV_FILE" ]; then
-  export $(grep -v '^#' $ENV_FILE | xargs)
+  set -a
+  # shellcheck source=/dev/null
+  source "$ENV_FILE"
+  set +a
 else
   echo "❌ .env file not found at $ENV_FILE"
   exit 1
 fi
 
+# Derive shared export directories
+TENANT_CONFIG_ROOT="${TENANT_CONFIG_ROOT:-$DEFAULT_TENANT_EXPORT_ROOT}"
+NEXT_TENANT_CONFIG_DIR="${NEXT_TENANT_CONFIG_DIR:-$FRONTEND_DIR/config/tenants}"
+WORDPRESS_THEME_CONFIG_DIR="${WORDPRESS_THEME_CONFIG_DIR:-$TENANT_CONFIG_ROOT/wordpress/tenants}"
+
 # --- Pre-checks ---
-# 1. Yarn check
-if ! command -v yarn &> /dev/null; then
-  echo "❌ Yarn is not installed. Please install with: npm install -g yarn"
+check_command() {
+  local cmd=$1
+  local install_hint=$2
+  if ! command -v "$cmd" &>/dev/null; then
+    echo "❌ Missing prerequisite: $cmd"
+    [ -n "$install_hint" ] && echo "   ➜ $install_hint"
+    exit 1
+  fi
+}
+
+check_command "psql" "Install PostgreSQL client tools and ensure 'psql' is on your PATH."
+check_command "node" "Install Node.js v20 or later."
+check_command "yarn" "Install Yarn globally with: npm install -g yarn"
+
+if [ ! -x "$BACKEND_DIR/node_modules/.bin/medusa" ]; then
+  echo "❌ Medusa CLI is not installed. Run 'cd $BACKEND_DIR && yarn install' first."
   exit 1
 fi
 
-# 2. Frontend config directory check
-if [ ! -d "$FRONTEND_DIR/config" ]; then
-  echo "⚠️  Creating missing directory: $FRONTEND_DIR/config"
-  mkdir -p "$FRONTEND_DIR/config"
+mkdir -p "$TENANT_CONFIG_ROOT" "$NEXT_TENANT_CONFIG_DIR" "$WORDPRESS_THEME_CONFIG_DIR"
+
+REQUIRED_ENV_VARS=(DB_USER DB_PASS DB_HOST DB_PORT MAIN_DB ROOT_DOMAIN)
+for var in "${REQUIRED_ENV_VARS[@]}"; do
+  if [ -z "${!var}" ]; then
+    echo "❌ Missing required environment variable: $var"
+    echo "   ➜ Define $var in $ENV_FILE"
+    exit 1
+  fi
+done
+
+if [ -n "$WORDPRESS_NETWORK_ID" ]; then
+  echo "ℹ️  Targeting WordPress network ID: $WORDPRESS_NETWORK_ID"
 fi
 
 check_env_and_db() {
@@ -39,6 +73,8 @@ check_env_and_db() {
   echo "  DB_PORT=$DB_PORT"
   echo "  MAIN_DB=$MAIN_DB"
   echo "  ROOT_DOMAIN=$ROOT_DOMAIN"
+  echo "  NEXT CONFIG DIR=$NEXT_TENANT_CONFIG_DIR"
+  echo "  WORDPRESS CONFIG DIR=$WORDPRESS_THEME_CONFIG_DIR"
 
   echo "🔎 Testing Postgres connection..."
   if PGPASSWORD=$DB_PASS psql -U $DB_USER -h $DB_HOST -p $DB_PORT -c "\q" &>/dev/null; then
@@ -98,10 +134,11 @@ create_tenant() {
   PGPASSWORD=$DB_PASS psql -U $DB_USER -h $DB_HOST -p $DB_PORT -tc "SELECT 1 FROM pg_database WHERE datname = '$DB_NAME'" | grep -q 1 || \
   PGPASSWORD=$DB_PASS psql -U $DB_USER -h $DB_HOST -p $DB_PORT -c "CREATE DATABASE $DB_NAME"
 
-  # Run Medusa migrations inside tenant DB (Medusa v2 syntax)
-  cd $BACKEND_DIR
+  # Run Medusa migrations for the tenant using the provisioning script
+  pushd "$BACKEND_DIR" >/dev/null || exit 1
   DATABASE_URL="postgres://$DB_USER:$DB_PASS@$DB_HOST:$DB_PORT/$DB_NAME" \
-  yarn medusa db:migrate || { echo "❌ Medusa migrations failed"; exit 1; }
+  yarn medusa exec ./scripts/run-tenant-migrations.ts || { echo "❌ Tenant migration workflow failed"; popd >/dev/null; exit 1; }
+  popd >/dev/null || exit 1
 
   # Insert tenant record into db_main
   PGPASSWORD=$DB_PASS psql -U $DB_USER -h $DB_HOST -p $DB_PORT -d $MAIN_DB -c "
@@ -117,8 +154,25 @@ create_tenant() {
     echo "⚠️ Failed to create admin via Medusa CLI"
   }
 
-  # Write frontend config file
-  echo "{ \"tenant\": \"$TENANT_NAME\", \"subdomain\": \"$SUBDOMAIN\" }" > $FRONTEND_DIR/config/${TENANT_NAME}.json
+  TENANT_CONFIG_CONTENT="$(cat <<JSON
+{
+  "tenant": "$TENANT_NAME",
+  "hostname": "$SUBDOMAIN",
+  "rootDomain": "$ROOT_DOMAIN",
+  "wordpress": {
+    "networkId": "${WORDPRESS_NETWORK_ID:-}",
+    "siteSlug": "$TENANT_NAME"
+  },
+  "storefront": {
+    "medusaUrl": "${MEDUSA_BACKEND_URL:-http://localhost:9000}",
+    "publishableKey": "${NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY:-}"
+  }
+}
+JSON
+)"
+
+  echo "$TENANT_CONFIG_CONTENT" > "$NEXT_TENANT_CONFIG_DIR/${TENANT_NAME}.json"
+  echo "$TENANT_CONFIG_CONTENT" > "$WORDPRESS_THEME_CONFIG_DIR/${TENANT_NAME}.json"
 
   echo "✅ Tenant $TENANT_NAME created successfully!"
   echo "   Admin login: admin@$TENANT_NAME.com / ${ADMIN_PASS:-admin123}"
@@ -137,7 +191,7 @@ delete_tenant() {
 
   PGPASSWORD=$DB_PASS psql -U $DB_USER -h $DB_HOST -p $DB_PORT -d $MAIN_DB -c "DELETE FROM tenant WHERE name = '$TENANT_NAME';"
   PGPASSWORD=$DB_PASS psql -U $DB_USER -h $DB_HOST -p $DB_PORT -c "DROP DATABASE IF EXISTS $DB_NAME;"
-  rm -f $FRONTEND_DIR/config/${TENANT_NAME}.json
+  rm -f "$NEXT_TENANT_CONFIG_DIR/${TENANT_NAME}.json" "$WORDPRESS_THEME_CONFIG_DIR/${TENANT_NAME}.json"
 
   echo "✅ Tenant $TENANT_NAME deleted successfully!"
 }

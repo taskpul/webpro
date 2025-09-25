@@ -1,0 +1,13 @@
+{
+  "tenant": "ns1",
+  "hostname": "ns1.busymet.com",
+  "rootDomain": "busymet.com",
+  "wordpress": {
+    "networkId": "",
+    "siteSlug": "ns1"
+  },
+  "storefront": {
+    "medusaUrl": "http://0.0.0.0:9000",
+    "publishableKey": ""
+  }
+}
