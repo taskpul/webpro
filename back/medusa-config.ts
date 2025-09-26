@@ -16,12 +16,37 @@ export default defineConfig({
   projectConfig: {
     databaseUrl: connectionString,
     databaseEntities: [User, Tenant],
-    http: {
-      storeCors: process.env.STORE_CORS || "",
-      adminCors: process.env.ADMIN_CORS || "",
-      authCors: process.env.AUTH_CORS || "",
-      jwtSecret: process.env.JWT_SECRET || "supersecret",
-      cookieSecret: process.env.COOKIE_SECRET || "supersecret",
-    },
+    http: (() => {
+      const httpConfig: {
+        storeCors?: string
+        adminCors?: string
+        authCors?: string
+        jwtSecret: string
+        cookieSecret: string
+      } = {
+        jwtSecret:
+          typeof process.env.JWT_SECRET === "string" && process.env.JWT_SECRET.length > 0
+            ? process.env.JWT_SECRET
+            : "supersecret",
+        cookieSecret:
+          typeof process.env.COOKIE_SECRET === "string" && process.env.COOKIE_SECRET.length > 0
+            ? process.env.COOKIE_SECRET
+            : "supersecret",
+      }
+
+      if (typeof process.env.STORE_CORS !== "undefined") {
+        httpConfig.storeCors = process.env.STORE_CORS
+      }
+
+      if (typeof process.env.ADMIN_CORS !== "undefined") {
+        httpConfig.adminCors = process.env.ADMIN_CORS
+      }
+
+      if (typeof process.env.AUTH_CORS !== "undefined") {
+        httpConfig.authCors = process.env.AUTH_CORS
+      }
+
+      return httpConfig
+    })(),
   },
 })
