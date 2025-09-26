@@ -11,6 +11,32 @@ type TenantRecord = {
 const connections: Record<string, DataSource> = {}
 const tenantMetadataCache = new Map<string, TenantRecord | null>()
 
+export const evictTenantMetadataCache = (lookupKey: string | null | undefined) => {
+  if (!lookupKey) {
+    return
+  }
+
+  tenantMetadataCache.delete(lookupKey)
+}
+
+export const destroyTenantConnection = async (dbName: string | null | undefined) => {
+  if (!dbName) {
+    return
+  }
+
+  const connection = connections[dbName]
+
+  if (!connection) {
+    return
+  }
+
+  delete connections[dbName]
+
+  if (connection.isInitialized) {
+    await connection.destroy()
+  }
+}
+
 type TenantOrmPaths = {
   entities: string[]
   migrations: string[]

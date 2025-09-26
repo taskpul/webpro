@@ -8,6 +8,10 @@ import {
   TenantMigrationRunner,
   runTenantMigrations,
 } from "./tenant-migration-runner"
+import {
+  destroyTenantConnection,
+  evictTenantMetadataCache,
+} from "../../loaders/tenant-loader"
 
 type PgClientLike = {
   connect: () => Promise<void>
@@ -195,6 +199,9 @@ export class TenantService {
 
     await tenantRepo.remove(tenant)
     await this.dropDatabase(tenant.dbName)
+
+    evictTenantMetadataCache(tenant.subdomain)
+    await destroyTenantConnection(tenant.dbName)
 
     return { id: tenant.id, name: tenant.name }
   }
