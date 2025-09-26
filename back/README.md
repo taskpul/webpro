@@ -42,6 +42,10 @@ Visit the [Quickstart Guide](https://docs.medusajs.com/learn/installation) to se
 
 Visit the [Docs](https://docs.medusajs.com/learn/installation#get-started) to learn more about our system requirements.
 
+### Required environment secrets
+
+Before booting the server in staging or production, set strong, unique values for `JWT_SECRET` and `COOKIE_SECRET` in your environment (see [`./.env.template`](./.env.template) for guidance). Without them the server will exit during start-up. In development, the configuration generates ephemeral secrets if they are missing, but the values change on each restart—set persistent secrets locally if you need stable sessions across restarts.
+
 ## What is Medusa
 
 Medusa is a set of commerce modules and tools that allow you to build rich, reliable, and performant commerce applications without reinventing core commerce logic. The modules can be customized and used to build advanced ecommerce stores, marketplaces, or any product that needs foundational commerce primitives. All modules are open-source and freely available on npm.
