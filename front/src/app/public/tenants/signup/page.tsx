@@ -38,7 +38,7 @@ export const metadata: Metadata = {
 }
 
 type TenantSignupPageProps = {
-  searchParams?: SearchParams
+  searchParams?: Promise<SearchParams>
 }
 
 const TenantSignupPage = async ({ searchParams }: TenantSignupPageProps) => {
@@ -47,10 +47,12 @@ const TenantSignupPage = async ({ searchParams }: TenantSignupPageProps) => {
   const medusaUrl = tenant.storefront?.medusaUrl ?? process.env.MEDUSA_BACKEND_URL ?? null
   const actionUrl = resolveSignupAction(medusaUrl)
 
+  const params = ((await searchParams) ?? {}) as SearchParams
+
   const initialSubdomain =
-    firstParam(searchParams?.subdomain) ??
-    firstParam(searchParams?.tenant) ??
-    firstParam(searchParams?.site) ??
+    firstParam(params.subdomain) ??
+    firstParam(params.tenant) ??
+    firstParam(params.site) ??
     null
 
   return (

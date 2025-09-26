@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest"
+import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest"
 import type { NextRequest } from "next/server"
 
 const getRegionMapMock = vi.fn()
@@ -44,7 +44,11 @@ vi.mock("next/server", () => ({
   NextRequest: class {},
 }))
 
-const { middleware } = await import("../../../middleware")
+let middleware: typeof import("../../../middleware")["middleware"]
+
+beforeAll(async () => {
+  ;({ middleware } = await import("../../../middleware"))
+})
 
 const createRequest = ({
   hostname,
@@ -103,7 +107,9 @@ describe("middleware multisite redirects", () => {
       pathname: "/",
     })
 
-    const response = await middleware(request)
+    const response = (await middleware(request)) as unknown as ReturnType<
+      typeof redirectMock
+    >
 
     expect(getRegionMapMock).toHaveBeenCalledOnce()
     expect(getCountryCodeMock).toHaveBeenCalledWith(request, regionMap)
@@ -121,7 +127,9 @@ describe("middleware multisite redirects", () => {
       pathname: "/us",
     })
 
-    const response = await middleware(request)
+    const response = (await middleware(request)) as unknown as ReturnType<
+      typeof redirectMock
+    >
 
     expect(getRegionMapMock).toHaveBeenCalledOnce()
     expect(getCountryCodeMock).toHaveBeenCalledWith(request, regionMap)
@@ -136,7 +144,9 @@ describe("middleware multisite redirects", () => {
       pathname: "/public/register",
     })
 
-    const response = await middleware(request)
+    const response = (await middleware(request)) as unknown as ReturnType<
+      typeof nextMock
+    >
 
     expect(nextMock).toHaveBeenCalledOnce()
     expect(getRegionMapMock).not.toHaveBeenCalled()
