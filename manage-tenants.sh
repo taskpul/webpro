@@ -62,6 +62,31 @@ for var in "${REQUIRED_ENV_VARS[@]}"; do
   fi
 done
 
+build_database_url() {
+  local target_db="$1"
+
+  DB_NAME="$target_db" node -e '
+const encode = (value) => encodeURIComponent(value ?? "")
+const username = process.env.DB_USER ?? ""
+const password = process.env.DB_PASS ?? ""
+const host = process.env.DB_HOST ?? "localhost"
+const port = process.env.DB_PORT ?? ""
+const database = process.env.DB_NAME ?? ""
+
+const hasUser = username.length > 0
+const hasPassword = password.length > 0
+
+const auth =
+  hasUser || hasPassword
+    ? `${hasUser ? encode(username) : ""}${hasPassword ? ":" + encode(password) : ""}@`
+    : ""
+
+const portSegment = port ? `:${port}` : ""
+
+process.stdout.write(`postgres://${auth}${host}${portSegment}/${database}`)
+'
+}
+
 if [ -n "$WORDPRESS_NETWORK_ID" ]; then
   echo "ℹ️  Targeting WordPress network ID: $WORDPRESS_NETWORK_ID"
 fi
@@ -136,7 +161,7 @@ create_tenant() {
 
   # Run Medusa migrations for the tenant using the provisioning script
   pushd "$BACKEND_DIR" >/dev/null || exit 1
-  DATABASE_URL="postgres://$DB_USER:$DB_PASS@$DB_HOST:$DB_PORT/$DB_NAME" \
+  DATABASE_URL="$(build_database_url "$DB_NAME")" \
   yarn medusa exec ./scripts/run-tenant-migrations.ts || { echo "❌ Tenant migration workflow failed"; popd >/dev/null; exit 1; }
   popd >/dev/null || exit 1
 
@@ -149,7 +174,7 @@ create_tenant() {
   "
 
   # ✅ Create default admin using Medusa CLI
-  DATABASE_URL="postgres://$DB_USER:$DB_PASS@$DB_HOST:$DB_PORT/$DB_NAME" \
+  DATABASE_URL="$(build_database_url "$DB_NAME")" \
   yarn medusa user -e admin@$TENANT_NAME.com -p ${ADMIN_PASS:-admin123} || {
     echo "⚠️ Failed to create admin via Medusa CLI"
   }

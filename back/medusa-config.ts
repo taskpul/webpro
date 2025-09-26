@@ -3,6 +3,7 @@ import { randomBytes } from "crypto"
 import { loadEnv, defineConfig } from "@medusajs/framework/utils"
 import { User } from "./src/modules/user/user.entity"
 import Tenant from "./src/modules/tenant/tenant-model"
+import { buildPostgresConnectionUrl } from "./src/utils/database-url"
 
 loadEnv(process.env.NODE_ENV || "development", process.cwd())
 
@@ -11,7 +12,13 @@ const dbPass = process.env.DB_PASS
 const dbHost = process.env.DB_HOST || "localhost"
 const dbPort = process.env.DB_PORT || "5432"
 const mainDb = process.env.MAIN_DB || "db_main"
-const connectionString = `postgres://${dbUser}:${dbPass}@${dbHost}:${dbPort}/${mainDb}`
+const connectionString = buildPostgresConnectionUrl({
+  host: dbHost,
+  port: dbPort,
+  database: mainDb,
+  username: dbUser,
+  password: dbPass,
+})
 
 const nodeEnv = process.env.NODE_ENV ?? "development"
 const isDevLikeEnv = nodeEnv === "development" || nodeEnv === "test"

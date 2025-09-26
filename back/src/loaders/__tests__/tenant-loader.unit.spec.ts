@@ -197,6 +197,19 @@ describe("tenantMiddleware", () => {
     expect(next).toHaveBeenCalledTimes(1)
   })
 
+  it("encodes credentials when building tenant connection URLs", async () => {
+    process.env.DB_USER = "tenant+user"
+    process.env.DB_PASS = "p@ss:word/with?reserved"
+
+    const { getTenantConnection } = await loadTenantLoader()
+
+    await getTenantConnection("db_special")
+
+    expect(dataSources.db_special.options.url).toBe(
+      "postgres://tenant%2Buser:p%40ss%3Aword%2Fwith%3Freserved@localhost:5432/db_special"
+    )
+  })
+
   it("caches failed lookups to allow passthrough", async () => {
     const handler = jest.fn().mockResolvedValue([])
     queryHandlers.db_main = handler

@@ -2,6 +2,7 @@ import path from "path"
 import { DataSource } from "typeorm"
 import { Request, Response, NextFunction } from "express"
 import { MedusaError } from "medusa-core-utils"
+import { buildPostgresConnectionUrl } from "../utils/database-url"
 
 type TenantRecord = {
   db_name: string
@@ -290,7 +291,13 @@ export async function getTenantConnection(dbName: string) {
 
   const dataSource = new DataSource({
     type: "postgres",
-    url: `postgres://${process.env.DB_USER}:${process.env.DB_PASS}@${process.env.DB_HOST}:${process.env.DB_PORT}/${dbName}`,
+    url: buildPostgresConnectionUrl({
+      host: process.env.DB_HOST || "localhost",
+      port: process.env.DB_PORT || "5432",
+      database: dbName,
+      username: process.env.DB_USER,
+      password: process.env.DB_PASS,
+    }),
     entities: ormPaths.entities,
     migrations: ormPaths.migrations,
     synchronize: false,
