@@ -62,7 +62,7 @@ const SignupForm = ({ actionUrl, tenantName, initialSubdomain }: SignupFormProps
         headers: {
           "content-type": "application/json",
         },
-        credentials: "include",
+        credentials: "omit",
         body: JSON.stringify(payload),
       })
 
