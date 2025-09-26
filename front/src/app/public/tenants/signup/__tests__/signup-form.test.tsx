@@ -54,6 +54,7 @@ describe("SignupForm", () => {
 
     expect(url).toBe("https://api.example.com/public/tenants/signup")
     expect(options.method).toBe("POST")
+    expect(options.credentials).toBe("omit")
     expect(typeof options.body).toBe("string")
 
     const payload = JSON.parse(options.body as string)
