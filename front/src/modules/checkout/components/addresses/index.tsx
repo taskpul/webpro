@@ -8,7 +8,7 @@ import { Heading, Text, useToggleState } from "@medusajs/ui"
 import Divider from "@modules/common/components/divider"
 import Spinner from "@modules/common/icons/spinner"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
-import { useActionState } from "react"
+import { useFormState } from "react-dom"
 import BillingAddress from "../billing_address"
 import ErrorMessage from "../error-message"
 import ShippingAddress from "../shipping-address"
@@ -37,7 +37,7 @@ const Addresses = ({
     router.push(pathname + "?step=address")
   }
 
-  const [message, formAction] = useActionState(setAddresses, null)
+  const [message, formAction] = useFormState(setAddresses, null)
 
   return (
     <div className="bg-white">
