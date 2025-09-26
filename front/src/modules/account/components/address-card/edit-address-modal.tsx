@@ -1,6 +1,7 @@
 "use client"
 
-import React, { useEffect, useState, useActionState } from "react"
+import React, { useEffect, useState } from "react"
+import { useFormState } from "react-dom"
 import { PencilSquare as Edit, Trash } from "@medusajs/icons"
 import { Button, Heading, Text, clx } from "@medusajs/ui"
 
@@ -31,7 +32,7 @@ const EditAddress: React.FC<EditAddressProps> = ({
   const [successState, setSuccessState] = useState(false)
   const { state, open, close: closeModal } = useToggleState(false)
 
-  const [formState, formAction] = useActionState(updateCustomerAddress, {
+  const [formState, formAction] = useFormState(updateCustomerAddress, {
     success: false,
     error: null,
     addressId: address.id,
