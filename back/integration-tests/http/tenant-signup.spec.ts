@@ -1,6 +1,7 @@
 import express, { NextFunction, Request, RequestHandler, Router } from "express"
 import { randomUUID } from "crypto"
 import type { AddressInfo } from "net"
+import { MedusaError } from "medusa-core-utils"
 import publicTenantSignupRoutes from "../../src/api/routes/public/tenant-signup"
 import TenantSignupService from "../../src/modules/tenant/tenant-signup-service"
 import type {
@@ -36,8 +37,34 @@ class FakeTenantService implements Pick<TenantService, "create"> {
       name: input.name.trim(),
       subdomain,
       dbName,
+      planId: input.planId ?? null,
       createdAt: now,
       updatedAt: now,
+    }
+  }
+}
+
+class FakeTenantPlanService {
+  readonly validPlans = new Set(["starter", "plus"])
+  lastChecked?: string
+
+  async assertActivePlan(planId: string) {
+    const normalized = planId.trim()
+    this.lastChecked = normalized
+
+    if (!this.validPlans.has(normalized)) {
+      throw new MedusaError(
+        MedusaError.Types.INVALID_DATA,
+        "The requested plan is not available"
+      )
+    }
+
+    return {
+      id: normalized,
+      name: normalized,
+      isActive: true,
+      createdAt: new Date(),
+      updatedAt: new Date(),
     }
   }
 }
@@ -58,7 +85,11 @@ const attachScope = (signupService: TenantSignupService): RequestHandler => {
 
 const startServer = () => {
   const tenantService = new FakeTenantService()
-  const signupService = new TenantSignupService({ tenantService })
+  const planService = new FakeTenantPlanService()
+  const signupService = new TenantSignupService({
+    tenantService,
+    tenantPlanService: planService,
+  })
   const app = express()
   app.use(express.json())
   app.use(attachScope(signupService))
@@ -102,7 +133,7 @@ const startServer = () => {
     await new Promise<void>((resolve) => server.close(() => resolve()))
   }
 
-  return { requestJson, request, close, tenantService, baseUrl }
+  return { requestJson, request, close, tenantService, planService, baseUrl }
 }
 
 const snapshotEnv = (keys: string[]) => {
@@ -236,6 +267,7 @@ describe("Public tenant signup", () => {
       expect(body).toContain("Provision a Medusa storefront")
       expect(body).toContain("form method=\"post\"")
       expect(body).toContain("value=\"alpha\"")
+      expect(body).toContain("name=\"planId\"")
     } finally {
       restoreEnv()
       await server.close()
@@ -249,6 +281,7 @@ describe("Public tenant signup", () => {
       name: "Acme Widgets",
       email: "owner@acme.io",
       password: "StrongPass123",
+      planId: "starter",
     })
 
     expect(response.status).toBe(201)
@@ -256,14 +289,17 @@ describe("Public tenant signup", () => {
       name: "Acme Widgets",
       subdomain: "acme-widgets.example.com",
       dbName: "db_acme_widgets",
+      planId: "starter",
     })
 
     expect(server.tenantService.lastInput).toMatchObject({
       name: "Acme Widgets",
       adminEmail: "owner@acme.io",
       adminPassword: "StrongPass123",
+      planId: "starter",
     })
     expect(server.tenantService.migrationsRan).toBe(true)
+    expect(server.planService.lastChecked).toBe("starter")
 
     await server.close()
   })
@@ -276,15 +312,52 @@ describe("Public tenant signup", () => {
       email: "ts@example.com",
       password: "AnotherStrongPass123",
       subdomain: "custom-ts",
+      planId: "plus",
     })
 
     expect(response.status).toBe(201)
     expect(response.body.tenant).toMatchObject({
       subdomain: "custom-ts",
       dbName: "db_ts_source_tenant",
+      planId: "plus",
     })
     expect(server.tenantService.lastInput).toMatchObject({
       subdomain: "custom-ts",
+      planId: "plus",
+    })
+
+    await server.close()
+  })
+
+  it("returns an error when the plan identifier is missing", async () => {
+    const server = startServer()
+
+    const response = await server.requestJson("POST", "/public/tenants/signup", {
+      name: "No Plan Tenant",
+      email: "noplan@example.com",
+      password: "Password123",
+    })
+
+    expect(response.status).toBe(400)
+    expect(response.body).toMatchObject({ message: "planId is required" })
+
+    await server.close()
+  })
+
+  it("returns an error when the plan identifier is invalid", async () => {
+    const server = startServer()
+
+    const response = await server.requestJson("POST", "/public/tenants/signup", {
+      name: "Invalid Plan Tenant",
+      email: "invalid-plan@example.com",
+      password: "Password123",
+      planId: "unknown",
+    })
+
+    expect(response.status).toBe(400)
+    expect(response.body).toMatchObject({
+      type: "error",
+      message: "The requested plan is not available",
     })
 
     await server.close()

@@ -9,6 +9,7 @@ type TenantCreatePayload = Partial<{
   subdomain: unknown
   adminEmail: unknown
   adminPassword: unknown
+  planId: unknown
 }>
 
 type TenantValidationResult = {
@@ -57,6 +58,14 @@ export function validateTenantCreatePayload(
     }
   }
 
+  let planId: string | undefined
+  if (typeof payload.planId === "string") {
+    const trimmed = payload.planId.trim()
+    if (trimmed) {
+      planId = trimmed
+    }
+  }
+
   if (errors.length) {
     return { errors }
   }
@@ -67,6 +76,7 @@ export function validateTenantCreatePayload(
       adminEmail,
       adminPassword,
       subdomain,
+      planId,
     },
     errors,
   }

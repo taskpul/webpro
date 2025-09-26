@@ -233,6 +233,14 @@ const prefillSubdomain = (req: Request): string | null => {
   return candidate?.trim() ? candidate.trim() : null
 }
 
+const prefillPlan = (req: Request): string | null => {
+  const candidate =
+    extractQueryValue(req.query.plan as QueryValue) ??
+    extractQueryValue(req.query.planId as QueryValue)
+
+  return candidate?.trim() ? candidate.trim() : null
+}
+
 const applyWordPressQuery = (
   url: URL,
   req: Request,
@@ -271,6 +279,7 @@ export const handleTenantSignupGet = (req: Request, res: Response): void => {
 
   const actionPath = escapeAttribute(resolveActionPath(req))
   const subdomainPrefill = escapeAttribute(siteSlug ?? "")
+  const planPrefill = escapeAttribute(prefillPlan(req) ?? "")
 
   const html = `<!DOCTYPE html>
 <html lang="en">
@@ -358,6 +367,8 @@ export const handleTenantSignupGet = (req: Request, res: Response): void => {
         <label for="subdomain">Requested subdomain</label>
         <input id="subdomain" name="subdomain" type="text" value="${subdomainPrefill}" autocomplete="off" />
         <small>Leave the subdomain blank to generate it from the tenant name.</small>
+        <label for="planId">Plan identifier</label>
+        <input id="planId" name="planId" type="text" value="${planPrefill}" required autocomplete="off" />
         <button type="submit">Create storefront</button>
       </form>
     </main>
@@ -374,5 +385,6 @@ export const __testables = {
   appendQueryParams,
   resolveActionPath,
   prefillSubdomain,
+  prefillPlan,
   shouldUseWordPress,
 }
