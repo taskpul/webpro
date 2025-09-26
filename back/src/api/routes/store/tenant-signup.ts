@@ -12,9 +12,21 @@ export default (router: Router) => {
   })
 
   route.post("/", async (req, res) => {
-    const { name, email, password, subdomain } = req.body
+    const { name, email, password, subdomain, planId } = req.body
+    if (typeof planId !== "string" || !planId.trim()) {
+      return res.status(400).json({
+        type: "error",
+        message: "planId is required",
+      })
+    }
     const tenantSignupService = req.scope.resolve("tenantSignupService")
-    const result = await tenantSignupService.signup({ name, email, password, subdomain })
+    const result = await tenantSignupService.signup({
+      name,
+      email,
+      password,
+      subdomain,
+      planId,
+    })
     res.json(result)
   })
 
