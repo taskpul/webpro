@@ -2,17 +2,62 @@ import React from "react"
 import { fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
-import SignupForm from "../signup-form"
+import SignupForm, { type TenantPlanSummary } from "../signup-form"
 
 describe("SignupForm", () => {
   afterEach(() => {
     vi.restoreAllMocks()
   })
 
+  const plans: TenantPlanSummary[] = [
+    { id: "starter", name: "Starter", description: "Launch-ready multisite plan" },
+    { id: "plus", name: "Plus", description: "Scaled WordPress tenant support" },
+  ]
+
   const fillField = (testId: string, value: string) => {
     const input = screen.getByTestId(testId) as HTMLInputElement
     fireEvent.change(input, { target: { value } })
   }
+
+  const selectPlan = (planId: string) => {
+    const card = screen.getByTestId(`tenant-plan-card-${planId}`)
+    fireEvent.click(card)
+  }
+
+  it("renders available tenant plans", () => {
+    render(
+      <SignupForm
+        actionUrl="https://api.example.com/public/tenants/signup"
+        tenantName="Acme"
+        initialSubdomain="acme"
+        plans={plans}
+      />
+    )
+
+    expect(screen.getByTestId("tenant-plan-card-starter")).toHaveTextContent("Starter")
+    expect(screen.getByTestId("tenant-plan-card-plus")).toHaveTextContent("Plus")
+    expect(screen.getByTestId("tenant-plan-placeholder")).toBeInTheDocument()
+    expect(screen.queryByTestId("tenant-form-fields")).not.toBeInTheDocument()
+  })
+
+  it("validates that a plan is selected before submission", async () => {
+    render(
+      <SignupForm
+        actionUrl="https://api.example.com/public/tenants/signup"
+        tenantName="Acme"
+        plans={plans}
+      />
+    )
+
+    const form = screen.getByTestId("tenant-signup-form") as HTMLFormElement
+    fireEvent.submit(form)
+
+    await waitFor(() => {
+      expect(screen.getByTestId("tenant-plan-error")).toHaveTextContent(
+        "Select a plan to continue."
+      )
+    })
+  })
 
   it("submits tenant details and shows a success message", async () => {
     const fetchMock = vi
@@ -32,8 +77,14 @@ describe("SignupForm", () => {
         actionUrl="https://api.example.com/public/tenants/signup"
         tenantName="Acme"
         initialSubdomain="acme"
+        plans={plans}
       />
     )
+
+    selectPlan("starter")
+
+    expect(screen.getByTestId("tenant-plan-summary")).toHaveTextContent("Starter")
+    expect(screen.getByTestId("tenant-form-fields")).toBeInTheDocument()
 
     fillField("tenant-name-input", "Acme Corp")
     fillField("tenant-email-input", "owner@acme.com")
@@ -62,6 +113,7 @@ describe("SignupForm", () => {
       name: "Acme Corp",
       email: "owner@acme.com",
       subdomain: "acme",
+      planId: "starter",
     })
 
     await waitFor(() => {
@@ -85,8 +137,14 @@ describe("SignupForm", () => {
     )
 
     render(
-      <SignupForm actionUrl="https://api.example.com/public/tenants/signup" tenantName={null} />
+      <SignupForm
+        actionUrl="https://api.example.com/public/tenants/signup"
+        tenantName={null}
+        plans={plans}
+      />
     )
+
+    selectPlan("plus")
 
     fillField("tenant-name-input", "")
     fillField("tenant-email-input", "bad-email")
