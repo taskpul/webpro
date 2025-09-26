@@ -3,7 +3,7 @@ import { Container } from "@medusajs/ui"
 import Checkbox from "@modules/common/components/checkbox"
 import Input from "@modules/common/components/input"
 import { mapKeys } from "lodash"
-import React, { useEffect, useMemo, useState } from "react"
+import React, { useCallback, useEffect, useMemo, useState } from "react"
 import AddressSelect from "../address-select"
 import CountrySelect from "../country-select"
 
@@ -45,10 +45,8 @@ const ShippingAddress = ({
     [customer?.addresses, countriesInRegion]
   )
 
-  const setFormAddress = (
-    address?: HttpTypes.StoreCartAddress,
-    email?: string
-  ) => {
+  const setFormAddress = useCallback(
+    (address?: HttpTypes.StoreCartAddress, email?: string) => {
     address &&
       setFormData((prevState: Record<string, any>) => ({
         ...prevState,
@@ -68,7 +66,7 @@ const ShippingAddress = ({
         ...prevState,
         email: email,
       }))
-  }
+  }, [])
 
   useEffect(() => {
     // Ensure cart is not null and has a shipping_address before setting form data
@@ -79,7 +77,7 @@ const ShippingAddress = ({
     if (cart && !cart.email && customer?.email) {
       setFormAddress(undefined, customer.email)
     }
-  }, [cart]) // Add cart as a dependency
+  }, [cart, customer?.email, setFormAddress])
 
   const handleChange = (
     e: React.ChangeEvent<

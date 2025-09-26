@@ -1,4 +1,46 @@
+const fs = require("fs")
+const path = require("path")
+
 const checkEnvVariables = require("./check-env-variables")
+
+const loadTenantSnapshot = () => {
+  const directory =
+    process.env.TENANT_CONFIG_DIR ?? path.join(__dirname, "config", "tenants")
+
+  try {
+    const files = fs.readdirSync(directory)
+
+    const configs = files
+      .filter((file) => file.endsWith(".json"))
+      .sort((a, b) => a.localeCompare(b))
+      .map((file) => {
+        const absolute = path.join(directory, file)
+        const data = fs.readFileSync(absolute, "utf-8")
+
+        try {
+          return JSON.parse(data)
+        } catch (error) {
+          console.warn(
+            `⚠️  Failed to parse tenant config ${file}: ${(error && error.message) || error}`
+          )
+          return null
+        }
+      })
+      .filter((config) => config !== null)
+
+    return JSON.stringify(configs)
+  } catch (error) {
+    if (error && error.code !== "ENOENT") {
+      console.warn(
+        `⚠️  Unable to read tenant configs from ${directory}: ${(error && error.message) || error}`
+      )
+    }
+
+    return "[]"
+  }
+}
+
+const tenantConfigSnapshot = loadTenantSnapshot()
 
 checkEnvVariables()
 
@@ -13,10 +55,13 @@ const nextConfig = {
     },
   },
   eslint: {
-    ignoreDuringBuilds: true,
+    ignoreDuringBuilds: false,
   },
   typescript: {
-    ignoreBuildErrors: true,
+    ignoreBuildErrors: false,
+  },
+  env: {
+    NEXT_TENANT_CONFIG_SNAPSHOT: tenantConfigSnapshot,
   },
   images: {
     remotePatterns: [

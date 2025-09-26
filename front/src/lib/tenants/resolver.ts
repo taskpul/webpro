@@ -1,6 +1,3 @@
-import { promises as fs } from "fs"
-import path from "path"
-
 export interface TenantStorefrontSettings {
   medusaUrl: string
   publishableKey?: string | null
@@ -32,8 +29,49 @@ export interface TenantContext {
 
 const tenantCache = new Map<string, TenantConfig>()
 
-const getTenantDirectory = () =>
-  process.env.TENANT_CONFIG_DIR ?? path.join(process.cwd(), "config", "tenants")
+const isTenantConfig = (value: unknown): value is TenantConfig => {
+  if (!value || typeof value !== "object") {
+    return false
+  }
+
+  const candidate = value as Partial<TenantConfig>
+
+  return (
+    typeof candidate.tenant === "string" &&
+    typeof candidate.hostname === "string" &&
+    typeof candidate.rootDomain === "string"
+  )
+}
+
+const parseTenantConfigsFromSnapshot = (): TenantConfig[] => {
+  const snapshot = process.env.NEXT_TENANT_CONFIG_SNAPSHOT
+
+  if (!snapshot) {
+    return []
+  }
+
+  try {
+    const parsed = JSON.parse(snapshot) as unknown
+
+    if (!Array.isArray(parsed)) {
+      return []
+    }
+
+    return parsed.filter(isTenantConfig)
+  } catch {
+    return []
+  }
+}
+
+const hydrateTenantCache = (configs: TenantConfig[]) => {
+  configs.forEach((config) => {
+    const cacheKey = normalizeHost(config.hostname) ?? config.tenant
+
+    if (cacheKey) {
+      tenantCache.set(cacheKey, config)
+    }
+  })
+}
 
 const normalizeHost = (host?: string | null): string | null => {
   if (!host) {
@@ -90,28 +128,15 @@ const isNetworkAdminPath = (pathname?: string | null) => {
 }
 
 const loadTenantConfigs = async (): Promise<void> => {
-  const directory = getTenantDirectory()
+  if (tenantCache.size > 0) {
+    return
+  }
 
-  const files = await fs.readdir(directory).catch((error) => {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-      return []
-    }
+  const fromSnapshot = parseTenantConfigsFromSnapshot()
 
-    throw error
-  })
-
-  await Promise.all(
-    files
-      .filter((file) => file.endsWith(".json"))
-      .sort((a, b) => a.localeCompare(b))
-      .map(async (file) => {
-        const absolute = path.join(directory, file)
-        const data = await fs.readFile(absolute, "utf-8")
-        const parsed = JSON.parse(data) as TenantConfig
-
-        tenantCache.set(normalizeHost(parsed.hostname) ?? parsed.tenant, parsed)
-      })
-  )
+  if (fromSnapshot.length > 0) {
+    hydrateTenantCache(fromSnapshot)
+  }
 }
 
 const ensureTenantCache = async () => {
@@ -129,7 +154,10 @@ const findTenantByHost = async (host: string): Promise<TenantConfig | null> => {
     return direct
   }
 
-  for (const config of tenantCache.values()) {
+  const configs = Array.from(tenantCache.values())
+
+  for (let index = 0; index < configs.length; index += 1) {
+    const config = configs[index]
     const normalizedHostname = normalizeHost(config.hostname)
     const normalizedRootDomain = normalizeHost(config.rootDomain)
 
@@ -154,7 +182,11 @@ const resolvePrimaryDomain = async (host: string): Promise<TenantConfig | null> 
 
   const matches: TenantConfig[] = []
 
-  for (const config of tenantCache.values()) {
+  const configs = Array.from(tenantCache.values())
+
+  for (let index = 0; index < configs.length; index += 1) {
+    const config = configs[index]
+
     if (normalizeHost(config.rootDomain) === host) {
       matches.push(config)
     }

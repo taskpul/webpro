@@ -18,36 +18,41 @@ type Props = {
 export const PRODUCT_LIMIT = 12
 
 export async function generateStaticParams() {
-  const { collections } = await listCollections({
-    fields: "*products",
-  })
+  try {
+    const [{ collections }, regions] = await Promise.all([
+      listCollections({
+        fields: "*products",
+      }),
+      listRegions(),
+    ])
 
-  if (!collections) {
+    if (!collections?.length || !regions?.length) {
+      return []
+    }
+
+    const countryCodes = regions
+      .map((region: StoreRegion) =>
+        region.countries?.map((country) => country.iso_2).filter(Boolean) ?? []
+      )
+      .flat()
+      .filter(Boolean) as string[]
+
+    if (!countryCodes.length) {
+      return []
+    }
+
+    const collectionHandles = collections
+      .map((collection: StoreCollection) => collection.handle)
+      .filter(Boolean) as string[]
+
+    return countryCodes
+      .map((countryCode: string) =>
+        collectionHandles.map((handle) => ({ countryCode, handle }))
+      )
+      .flat()
+  } catch {
     return []
   }
-
-  const countryCodes = await listRegions().then(
-    (regions: StoreRegion[]) =>
-      regions
-        ?.map((r) => r.countries?.map((c) => c.iso_2))
-        .flat()
-        .filter(Boolean) as string[]
-  )
-
-  const collectionHandles = collections.map(
-    (collection: StoreCollection) => collection.handle
-  )
-
-  const staticParams = countryCodes
-    ?.map((countryCode: string) =>
-      collectionHandles.map((handle: string | undefined) => ({
-        countryCode,
-        handle,
-      }))
-    )
-    .flat()
-
-  return staticParams
 }
 
 export async function generateMetadata(props: Props): Promise<Metadata> {

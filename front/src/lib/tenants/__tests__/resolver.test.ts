@@ -1,59 +1,47 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest"
-import os from "node:os"
-import path from "node:path"
-import { promises as fs } from "node:fs"
 
 import {
   __clearTenantCacheForTests,
   resolveTenantContext,
+  type TenantConfig,
 } from "../resolver"
 
-let configDirectory: string
-
-const writeTenantConfig = async (fileName: string, payload: Record<string, any>) => {
-  const filePath = path.join(configDirectory, fileName)
-  await fs.writeFile(filePath, JSON.stringify(payload, null, 2), "utf-8")
-}
+const createSnapshot = (configs: TenantConfig[]) => JSON.stringify(configs)
 
 beforeEach(async () => {
-  configDirectory = await fs.mkdtemp(
-    path.join(os.tmpdir(), "tenant-config-")
-  )
-
-  process.env.TENANT_CONFIG_DIR = configDirectory
   process.env.MEDUSA_BACKEND_URL = "https://default-medusa.local"
   process.env.NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY = "pk_default"
   delete process.env.WORDPRESS_NETWORK_HOSTS
   delete process.env.WORDPRESS_NETWORK_ADMIN_PATHS
   delete process.env.WORDPRESS_PRIMARY_DOMAINS
 
-  await writeTenantConfig("acme.json", {
-    tenant: "acme",
-    hostname: "acme.example.com",
-    rootDomain: "example.com",
-    storefront: {
-      medusaUrl: "https://medusa.acme.example.com",
-      publishableKey: "pk_acme",
+  process.env.NEXT_TENANT_CONFIG_SNAPSHOT = createSnapshot([
+    {
+      tenant: "acme",
+      hostname: "acme.example.com",
+      rootDomain: "example.com",
+      storefront: {
+        medusaUrl: "https://medusa.acme.example.com",
+        publishableKey: "pk_acme",
+      },
     },
-  })
-
-  await writeTenantConfig("beta.json", {
-    tenant: "beta",
-    hostname: "beta.example.com",
-    rootDomain: "example.com",
-    storefront: {
-      medusaUrl: "https://medusa.beta.example.com",
-      publishableKey: "pk_beta",
+    {
+      tenant: "beta",
+      hostname: "beta.example.com",
+      rootDomain: "example.com",
+      storefront: {
+        medusaUrl: "https://medusa.beta.example.com",
+        publishableKey: "pk_beta",
+      },
     },
-  })
+  ])
 
   __clearTenantCacheForTests()
 })
 
 afterEach(async () => {
   __clearTenantCacheForTests()
-  await fs.rm(configDirectory, { recursive: true, force: true })
-  delete process.env.TENANT_CONFIG_DIR
+  delete process.env.NEXT_TENANT_CONFIG_SNAPSHOT
 })
 
 describe("resolveTenantContext", () => {
