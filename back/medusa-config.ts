@@ -1,4 +1,5 @@
 import "reflect-metadata"
+import { randomBytes } from "crypto"
 import { loadEnv, defineConfig } from "@medusajs/framework/utils"
 import { User } from "./src/modules/user/user.entity"
 import Tenant from "./src/modules/tenant/tenant-model"
@@ -12,6 +13,32 @@ const dbPort = process.env.DB_PORT || "5432"
 const mainDb = process.env.MAIN_DB || "db_main"
 const connectionString = `postgres://${dbUser}:${dbPass}@${dbHost}:${dbPort}/${mainDb}`
 
+const nodeEnv = process.env.NODE_ENV ?? "development"
+const isDevLikeEnv = nodeEnv === "development" || nodeEnv === "test"
+
+const resolveSecret = (envKey: "JWT_SECRET" | "COOKIE_SECRET") => {
+  const value = process.env[envKey]
+
+  if (typeof value === "string" && value.trim().length > 0) {
+    return value
+  }
+
+  if (isDevLikeEnv) {
+    const generated = randomBytes(32).toString("hex")
+    process.env[envKey] = generated
+
+    console.warn(
+      `[medusa-config] ${envKey} was not provided. Generated an ephemeral development secret. Use a persistent value to keep sessions between restarts.`,
+    )
+
+    return generated
+  }
+
+  throw new Error(
+    `${envKey} is required when NODE_ENV=${nodeEnv}. Set a strong, unique secret in your environment before starting the server.`,
+  )
+}
+
 export default defineConfig({
   projectConfig: {
     databaseUrl: connectionString,
@@ -24,14 +51,8 @@ export default defineConfig({
         jwtSecret: string
         cookieSecret: string
       } = {
-        jwtSecret:
-          typeof process.env.JWT_SECRET === "string" && process.env.JWT_SECRET.length > 0
-            ? process.env.JWT_SECRET
-            : "supersecret",
-        cookieSecret:
-          typeof process.env.COOKIE_SECRET === "string" && process.env.COOKIE_SECRET.length > 0
-            ? process.env.COOKIE_SECRET
-            : "supersecret",
+        jwtSecret: resolveSecret("JWT_SECRET"),
+        cookieSecret: resolveSecret("COOKIE_SECRET"),
       }
 
       if (typeof process.env.STORE_CORS !== "undefined") {
