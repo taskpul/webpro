@@ -1,0 +1,33 @@
+name: Frontend CI
+
+on:
+  push:
+    paths:
+      - 'front/**'
+      - '.github/workflows/frontend.yml'
+  pull_request:
+    paths:
+      - 'front/**'
+      - '.github/workflows/frontend.yml'
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: front
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: yarn
+          cache-dependency-path: front/yarn.lock
+      - name: Enable Corepack
+        run: corepack enable
+      - name: Install dependencies
+        run: yarn install --immutable
+      - name: Run lint
+        run: yarn lint
+      - name: Run tests
+        run: yarn test
