@@ -52,9 +52,45 @@ const pickString = (...values: unknown[]): string | null => {
         return trimmed
       }
     }
+
+    if (typeof value === "number" && Number.isFinite(value)) {
+      return `${value}`
+    }
   }
 
   return null
+}
+
+const extractFeatures = (value: unknown): string[] | null => {
+  if (!Array.isArray(value)) {
+    return null
+  }
+
+  const features = value
+    .map((entry) => {
+      if (typeof entry === "string") {
+        const trimmed = entry.trim()
+        return trimmed.length > 0 ? trimmed : null
+      }
+
+      if (entry && typeof entry === "object") {
+        const candidate = entry as Record<string, unknown>
+        return (
+          pickString(
+            candidate["label"],
+            candidate["name"],
+            candidate["description"],
+            candidate["summary"],
+            candidate["title"]
+          ) ?? null
+        )
+      }
+
+      return null
+    })
+    .filter((entry): entry is string => Boolean(entry))
+
+  return features.length > 0 ? features : null
 }
 
 const parsePlanSummary = (value: unknown): TenantPlanSummary | null => {
@@ -99,19 +135,40 @@ const parsePlanSummary = (value: unknown): TenantPlanSummary | null => {
       candidate["billing_interval"]
     ) ?? null
 
-  const badge =
-    pickString(candidate["badge"], candidate["label"], candidate["tag"], candidate["badgeLabel"]) ?? null
+  const priceAmount =
+    typeof candidate["amount"] === "number" && Number.isFinite(candidate["amount"])
+      ? (candidate["amount"] as number)
+      : null
+  const priceCurrency = pickString(
+    candidate["currency"],
+    candidate["currencyCode"],
+    candidate["currency_code"]
+  )
 
-  const featuresCandidate = candidate["features"]
-  const features = Array.isArray(featuresCandidate)
-    ? featuresCandidate.filter((item): item is string => typeof item === "string")
-    : null
+  let priceFromAmount: string | null = null
+  if (priceAmount !== null && priceCurrency) {
+    try {
+      priceFromAmount = new Intl.NumberFormat(undefined, {
+        style: "currency",
+        currency: priceCurrency.toUpperCase(),
+      }).format(priceAmount / 100)
+    } catch {
+      priceFromAmount = null
+    }
+  }
+
+  const badge =
+    pickString(candidate["badge"], candidate["label"], candidate["tag"], candidate["badgeLabel"], candidate["badge_label"]) ??
+    null
+
+  const features =
+    extractFeatures(candidate["features"]) ?? extractFeatures(candidate["featureList"]) ?? null
 
   return {
     id,
     name,
     description: description ?? null,
-    price,
+    price: price ?? priceFromAmount,
     billingInterval,
     badge,
     features,

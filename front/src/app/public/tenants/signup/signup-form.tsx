@@ -205,6 +205,11 @@ const SignupForm = ({
                             <RadioGroup.Description className="text-small text-ui-fg-subtle">
                               {plan.description?.trim() || `Plan ID: ${plan.id}`}
                             </RadioGroup.Description>
+                            {plan.badge ? (
+                              <span className="inline-flex w-fit items-center rounded-full bg-ui-bg-interactive px-2 py-0.5 text-compact-x-small-plus font-medium text-ui-fg-on-color">
+                                {plan.badge}
+                              </span>
+                            ) : null}
                             {plan.price ? (
                               <p className="text-small-plus font-medium text-ui-fg-base">
                                 {plan.price}
