@@ -4,6 +4,18 @@ import TenantService, {
   TenantCreateInput,
   TenantServiceOptions,
 } from "../tenant-service"
+import {
+  destroyTenantConnection,
+  evictTenantMetadataCache,
+} from "../../../loaders/tenant-loader"
+
+jest.mock("../../../loaders/tenant-loader", () => ({
+  evictTenantMetadataCache: jest.fn(),
+  destroyTenantConnection: jest.fn().mockResolvedValue(undefined),
+}))
+
+const mockedEvictTenantMetadataCache = jest.mocked(evictTenantMetadataCache)
+const mockedDestroyTenantConnection = jest.mocked(destroyTenantConnection)
 
 type MockRepo = {
   create: jest.Mock
@@ -115,6 +127,8 @@ const setupService = (
 describe("TenantService", () => {
   beforeEach(() => {
     jest.clearAllMocks()
+    mockedEvictTenantMetadataCache.mockClear()
+    mockedDestroyTenantConnection.mockClear()
   })
 
   it("creates a tenant, database, and admin user", async () => {
@@ -325,6 +339,27 @@ describe("TenantService", () => {
     expect(manager.query).toHaveBeenCalledWith(
       'DROP DATABASE IF EXISTS "db_demo";'
     )
+  })
+
+  it("evicts tenant caches and destroys connections when deleting a tenant", async () => {
+    const { service, repo } = setupService()
+
+    const tenant = {
+      id: "tenant-id",
+      name: "Tenant",
+      dbName: "db_tenant",
+      subdomain: "tenant.example.com",
+    } as Tenant
+
+    repo.findOne.mockResolvedValue(tenant)
+    repo.remove.mockResolvedValue(tenant)
+
+    await service.delete({ id: tenant.id })
+
+    expect(mockedEvictTenantMetadataCache).toHaveBeenCalledWith(
+      "tenant.example.com"
+    )
+    expect(mockedDestroyTenantConnection).toHaveBeenCalledWith("db_tenant")
   })
 
   it("lists tenants using the repository", async () => {

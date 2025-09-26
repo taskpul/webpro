@@ -16,6 +16,7 @@ type MockedDataSourceInstance = {
   options: MockDataSourceOptions
   initialize: jest.Mock
   query: jest.Mock
+  destroy: jest.Mock
 }
 
 const queryHandlers: QueryHandlerMap = {}
@@ -52,6 +53,10 @@ jest.mock("typeorm", () => {
 
       const result = handler(sql, params)
       return result instanceof Promise ? result : Promise.resolve(result)
+    })
+
+    destroy = jest.fn().mockImplementation(async () => {
+      this.isInitialized = false
     })
   }
 
@@ -277,5 +282,53 @@ describe("tenantMiddleware", () => {
         path.join("/srv/medusa", "migrations/**/*.js"),
       ])
     )
+  })
+
+  it("evicts cached tenant metadata and destroys connections", async () => {
+    const manager = { id: "tenant-manager" }
+    managers.db_tenant = manager
+
+    const metadataHandler = jest
+      .fn()
+      .mockResolvedValue([
+        { subdomain: "tenant.example.com", db_name: "db_tenant" },
+      ])
+
+    queryHandlers.db_main = metadataHandler
+
+    const {
+      tenantMiddleware,
+      evictTenantMetadataCache,
+      destroyTenantConnection,
+    } = await loadTenantLoader()
+
+    const host = "tenant.example.com"
+
+    const firstReq = buildRequest(host)
+    const firstNext = jest.fn()
+    await tenantMiddleware(firstReq, {} as Response, firstNext as unknown as NextFunction)
+
+    expect(metadataHandler).toHaveBeenCalledTimes(1)
+    const initialDataSource = dataSources.db_tenant
+    expect(initialDataSource).toBeDefined()
+    expect(initialDataSource?.initialize).toHaveBeenCalledTimes(1)
+
+    const secondReq = buildRequest(host)
+    await tenantMiddleware(secondReq, {} as Response, jest.fn() as unknown as NextFunction)
+    expect(metadataHandler).toHaveBeenCalledTimes(1)
+
+    evictTenantMetadataCache(host)
+    await destroyTenantConnection("db_tenant")
+
+    expect(initialDataSource?.destroy).toHaveBeenCalledTimes(1)
+
+    const thirdReq = buildRequest(host)
+    await tenantMiddleware(thirdReq, {} as Response, jest.fn() as unknown as NextFunction)
+
+    expect(metadataHandler).toHaveBeenCalledTimes(2)
+    const refreshedDataSource = dataSources.db_tenant
+    expect(refreshedDataSource).toBeDefined()
+    expect(refreshedDataSource).not.toBe(initialDataSource)
+    expect(refreshedDataSource?.initialize).toHaveBeenCalledTimes(1)
   })
 })
