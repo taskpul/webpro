@@ -10,8 +10,27 @@ describe("SignupForm", () => {
   })
 
   const plans: TenantPlanSummary[] = [
-    { id: "starter", name: "Starter", description: "Launch-ready multisite plan" },
-    { id: "plus", name: "Plus", description: "Scaled WordPress tenant support" },
+    {
+      id: "starter",
+      name: "Starter",
+      description: "Launch-ready multisite plan",
+      price: "$29",
+      billingInterval: "month",
+      badge: "Popular",
+      features: [
+        "WordPress multisite integration",
+        "One storefront",
+      ],
+    },
+    {
+      id: "plus",
+      name: "Plus",
+      description: "Scaled WordPress tenant support",
+      price: "$79",
+      billingInterval: "month",
+      badge: "Enterprise",
+      features: ["Unlimited storefronts"],
+    },
   ]
 
   const fillField = (testId: string, value: string) => {
@@ -36,6 +55,8 @@ describe("SignupForm", () => {
 
     expect(screen.getByTestId("tenant-plan-card-starter")).toHaveTextContent("Starter")
     expect(screen.getByTestId("tenant-plan-card-plus")).toHaveTextContent("Plus")
+    expect(screen.getByText("Popular")).toBeInTheDocument()
+    expect(screen.getByText("WordPress multisite integration")).toBeInTheDocument()
     expect(screen.getByTestId("tenant-plan-placeholder")).toBeInTheDocument()
     expect(screen.queryByTestId("tenant-form-fields")).not.toBeInTheDocument()
   })
